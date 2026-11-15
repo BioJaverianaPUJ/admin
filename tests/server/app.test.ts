@@ -24,7 +24,13 @@ function setup() {
           expiresIn: new Date(Date.now() + 3600000).toISOString(),
         };
       if (path === "/users/me") return current;
-      if (path === `/users/${other}`) return { ...admin, id: other };
+      if (path === `/users/${other}`)
+        return {
+          ...admin,
+          id: other,
+          role: "SUPERADMIN",
+          username: "superadmin",
+        };
       if (path.startsWith("/specimens?"))
         return { content: [], pagination: { totalPages: 0 } };
       if (path.startsWith("/species"))

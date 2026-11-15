@@ -1,3 +1,4 @@
+import { registerSocialRoutes } from "./social";
 import express, {
   type Request,
   type Response,
@@ -127,7 +128,7 @@ export function createApp({
     try {
       // Fetch the current role for every operation: never trust a stale JWT role.
       session.user = await upstream<User>("/users/me", session.token);
-      if (session.user.role !== "ADMIN")
+      if (!["ADMIN", "SUPERADMIN"].includes(session.user.role))
         throw new HttpError(
           403,
           "Esta cuenta no tiene acceso de administrador.",
@@ -171,7 +172,7 @@ export function createApp({
       body,
     );
     const user = await upstream<User>("/users/me", login.token);
-    if (user.role !== "ADMIN")
+    if (!["ADMIN", "SUPERADMIN"].includes(user.role))
       throw new HttpError(403, "Tu cuenta no tiene el rol de administrador.");
     const expires = Date.parse(login.expiresIn);
     if (!Number.isFinite(expires) || expires <= Date.now())
@@ -206,6 +207,7 @@ export function createApp({
     const session = await authenticate(req, res);
     res.json({ user: session.user });
   });
+  registerSocialRoutes(app, authenticate, upstream);
   app.get("/admin-api/capabilities", async (req, res) => {
     await authenticate(req, res);
     res.json({
@@ -215,7 +217,9 @@ export function createApp({
       specimenLocationWrites: false,
       zones: false,
       gamification: false,
-      reports: false,
+      reports: true,
+      pois: true,
+      posts: true,
       reviews: true,
       userState: false,
       adminRemoval: false,
@@ -267,7 +271,7 @@ export function createApp({
         q: z.string().max(180).default(""),
         family: z.string().max(120).default(""),
         speciesId: z.string().default(""),
-        role: z.enum(["", "USER", "ADMIN"]).default(""),
+        role: z.enum(["", "USER", "ADMIN", "SUPERADMIN"]).default(""),
       })
       .parse(req.query);
     if (!q.q && !q.family && !q.speciesId && !q.role)
@@ -400,12 +404,12 @@ export function createApp({
       id = z.uuid().parse(req.params.id),
       body = userPatchSchema.parse(req.body),
       target = await upstream<User>(`/users/${id}`, s.token);
-    if (target.role === "ADMIN" && body.role === "USER")
-      throw new HttpError(
-        409,
-        "Retirar administradores requiere la protección atómica del último administrador en el backend.",
-      );
-    if (id === s.user.id && body.enabled === false)
+    if (
+      (target.role === "SUPERADMIN" || target.username === "superadmin") &&
+      body.role !== undefined
+    )
+      throw new HttpError(409, "El administrador inicial conserva su rol.");
+    if (id === s.user.id && body.role === "USER")
       throw new HttpError(
         409,
         "No puedes suspender tu propia sesión administrativa.",
@@ -416,10 +420,14 @@ export function createApp({
     const s = await authenticate(req, res),
       id = z.uuid().parse(req.params.id),
       target = await upstream<User>(`/users/${id}`, s.token);
-    if (target.role === "ADMIN")
+    if (
+      target.role === "SUPERADMIN" ||
+      target.username === "superadmin" ||
+      target.id === s.user.id
+    )
       throw new HttpError(
         409,
-        "No se eliminan administradores hasta que el backend garantice que siempre quede uno.",
+        "No puedes eliminar la cuenta inicial ni tu propia sesión administrativa.",
       );
     await upstream(`/users/${id}`, s.token, "DELETE");
     res.sendStatus(204);

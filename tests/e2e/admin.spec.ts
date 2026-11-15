@@ -50,6 +50,18 @@ async function mock(page: Page, authenticated = true) {
     } else if (path.endsWith("/logout")) {
       signed = false;
       status = 204;
+    } else if (path.includes("/social/")) {
+      body = {
+        content: [],
+        pagination: {
+          page: 0,
+          size: 12,
+          totalPages: 0,
+          totalElements: 0,
+          first: true,
+          last: true,
+        },
+      };
     } else if (path.endsWith("/options/species")) body = species;
     else if (path.includes("/resources/")) {
       if (req.method() !== "GET") {
@@ -171,11 +183,14 @@ test("usuarios, acciones protegidas y pantalla pequeña", async ({ page }) => {
   await mock(page);
   await page.goto("/#comunidad");
   await expect(
-    page.getByText("No informado", { exact: true }).first(),
+    page.getByText("@brayan", { exact: true }).first(),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Eliminar brayan", exact: true }),
-  ).toBeDisabled();
+    page
+      .getByRole("row")
+      .filter({ hasText: "@brayan" })
+      .getByRole("button", { name: "Eliminar", exact: true }),
+  ).toHaveCount(0);
   await page.screenshot({
     path: "test-results/comunidad-desktop.png",
     fullPage: true,
@@ -286,4 +301,101 @@ test("consulta revisiones reales del contrato y abre el perímetro editable", as
     .getByRole("button", { name: "Editar copia del perímetro" })
     .click();
   await expect(page.getByRole("dialog")).toContainText("Campus");
+});
+test("puntos de interés se guardan en el servidor y conservan la geometría", async ({
+  page,
+}) => {
+  await mock(page);
+  const saved: Record<string, unknown>[] = [];
+  await page.route("**/admin-api/social/pois**", async (route) => {
+    if (route.request().method() === "POST") {
+      saved.push(route.request().postDataJSON());
+      await route.fulfill({ json: { id: "new-poi", ...saved[0] } });
+    } else
+      await route.fulfill({
+        json: { content: [], pagination: { totalPages: 0, totalElements: 0 } },
+      });
+  });
+  await page.goto("/#zonas");
+  await page
+    .getByRole("button", { name: "Crear punto de interés", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Nuevo punto de interés" });
+  await dialog.getByLabel("Nombre *", { exact: true }).fill("Jardín de prueba");
+  await dialog
+    .locator(".leaflet-container")
+    .click({ position: { x: 200, y: 180 } });
+  await dialog.getByLabel("Latitud 1", { exact: true }).fill("4.6286");
+  await dialog.getByLabel("Longitud 1", { exact: true }).fill("-74.0637");
+  await dialog.getByRole("button", { name: "Guardar en el servidor" }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(saved[0]).toMatchObject({
+    name: "Jardín de prueba",
+    geometryType: "POINT",
+    centerLatitude: 4.6286,
+    centerLongitude: -74.0637,
+  });
+  await page.screenshot({
+    path: "test-results/puntos-interes.png",
+    fullPage: true,
+  });
+});
+test("denuncias consultan contenido y envían el estado confirmado", async ({
+  page,
+}) => {
+  await mock(page);
+  const writes: string[] = [];
+  const report = {
+    id: "r1",
+    reportType: "POST",
+    reportedPostId: "p1",
+    reason: "Spam",
+    status: "PENDING",
+    reportedUserUsername: "explorador",
+    reporterUsername: "visitante",
+    createdAt: "2026-11-15T12:00:00Z",
+  };
+  await page.route("**/admin-api/social/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (route.request().method() === "PUT") {
+      writes.push(path);
+      await route.fulfill({ json: { ...report, status: "UNDER_REVIEW" } });
+      return;
+    }
+    if (path.endsWith("/posts/p1")) {
+      await route.fulfill({
+        json: {
+          id: "p1",
+          title: "Prueba",
+          description: "Contenido reportado",
+          author: { username: "explorador" },
+          images: [],
+        },
+      });
+      return;
+    }
+    if (path.endsWith("/reports/r1")) {
+      await route.fulfill({ json: report });
+      return;
+    }
+    await route.fulfill({
+      json: {
+        content: path.endsWith("/reports") ? [report] : [],
+        pagination: { totalPages: 1, totalElements: 1 },
+      },
+    });
+  });
+  await page.goto("/#comunidad");
+  await page.getByRole("button", { name: "Denuncias", exact: true }).click();
+  await page.getByRole("button", { name: "Consultar", exact: true }).click();
+  await expect(
+    page.getByText("Contenido reportado", { exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("Estado", { exact: true }).selectOption("UNDER_REVIEW");
+  await page
+    .getByRole("dialog", { name: "Cambiar denuncia a En revisión" })
+    .getByRole("button", { name: "Confirmar cambio", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(writes).toEqual(["/admin-api/social/reports/r1/status"]);
 });

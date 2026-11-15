@@ -23,7 +23,7 @@ export interface User {
   lastName: string;
   username: string;
   email: string;
-  role: "USER" | "ADMIN";
+  role: "USER" | "ADMIN" | "SUPERADMIN";
   gender: string;
   profilePictureUrl?: string | null;
   bannerUrl?: string | null;

@@ -61,7 +61,15 @@ export function createUpstream(base: string): Upstream {
         response.status,
         messages[String(data?.code)] ??
           {
-            401: "La sesión terminó.",
+            401:
+              path === "/auth/login"
+                ? "Correo o contraseña incorrectos."
+                : "La sesión terminó.",
+            429: "Demasiados intentos. Espera unos minutos antes de volver a intentar.",
+            500: "El servidor de BioJaveriana tuvo un error interno (500). Intenta más tarde.",
+            502: "El backend de BioJaveriana no está disponible (502). Intenta más tarde o avisa al equipo del backend.",
+            503: "El servidor de BioJaveriana no está disponible temporalmente (503). Intenta más tarde.",
+            504: "El servidor de BioJaveriana tardó demasiado en responder (504). Intenta de nuevo más tarde.",
             403: "No tienes permiso.",
             404: "No se encontró el registro.",
             409: "El cambio entra en conflicto con otro registro.",

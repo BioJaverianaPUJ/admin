@@ -25,7 +25,6 @@ export const userPatchSchema = z
     username: z.string().trim().min(3).max(25).optional(),
     gender: z.enum(["MALE", "FEMALE", "NON_BINARY", "OTHER"]).optional(),
     role: z.enum(["USER", "ADMIN"]).optional(),
-    enabled: z.boolean().optional(),
   })
   .strict()
   .refine((v) => Object.keys(v).length > 0);

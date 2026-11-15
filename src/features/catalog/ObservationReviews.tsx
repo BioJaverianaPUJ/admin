@@ -18,6 +18,7 @@ interface Observation {
   revisionRequested: boolean;
   speciesCommonName: string | null;
   certainty: number | null;
+  similarityScore: number | null;
   observationType: "PLANT" | "ANIMAL" | null;
   imageUrl: string | null;
   createdAt: string;
@@ -146,7 +147,8 @@ export function ObservationReviews() {
             Reconocimiento: {selected.checked ? "procesado" : "sin completar"}.
             La respuesta no incluye el estado de verificación oficial.
           </p>
-          <p>Puntuación del modelo: {selected.certainty ?? "No disponible"}</p>
+          <p>Confianza: {selected.certainty ?? "No disponible"}</p>
+          <p>Similitud: {selected.similarityScore ?? "No disponible"}</p>
           {selected.imageUrl?.startsWith("https://") && (
             <img
               className="observation-photo"

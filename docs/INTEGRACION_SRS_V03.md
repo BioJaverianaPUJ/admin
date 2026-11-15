@@ -24,46 +24,46 @@ Es una referencia cartográfica del campus de Bogotá, incorporada a petición d
 
 ## Contratos nuevos conectados
 
-| Operación               | Ruta bajo /api/v1                                   | Particularidad                                                  |
-| ----------------------- | --------------------------------------------------- | --------------------------------------------------------------- |
-| Autorizar fotografía    | POST /observations/upload-presign                   | contentType; retorna key, url, method, contentType, expiresAt   |
-| Subir fotografía        | PUT a url firmada                                   | sin Authorization; mismo Content-Type                           |
-| Crear trabajo           | POST /observations                                  | referencePictureKey, latitude, longitude, waitTimeoutSeconds: 0 |
-| Estado                  | GET /observations/{observationId}/job-status        | el identificador es de observación, no jobId                    |
-| Historial propio        | GET /observations?page&size                         | totalPages y totalElements en raíz, distinto del catálogo       |
-| Solicitar revisión      | POST /observations/{id}/revision-request            | requiere checked; conserva resultado                            |
-| Consulta administrativa | GET /observations/admin?page&size&revisionRequested | exige ADMIN; se consume mediante BFF                            |
+| Operación | Ruta bajo /api/v1 | Particularidad |
+| --- | --- | --- |
+| Autorizar fotografía | POST /observations/upload-presign | contentType; retorna key, url, method, contentType, expiresAt |
+| Subir fotografía | PUT a url firmada | sin Authorization; mismo Content-Type |
+| Crear trabajo | POST /observations | referencePictureKey, latitude, longitude, waitTimeoutSeconds: 0 |
+| Estado | GET /observations/{observationId}/job-status | el identificador es de observación, no jobId |
+| Historial propio | GET /observations?page&size | totalPages y totalElements en raíz, distinto del catálogo |
+| Solicitar revisión | POST /observations/{id}/revision-request | requiere checked; conserva resultado |
+| Consulta administrativa | GET /observations/admin?page&size&revisionRequested | exige ADMIN; se consume mediante BFF |
 
 ## Matriz de alcance del SRS
 
 Esta matriz no declara cumplimiento integral ni certifica reglas que solo se pueden probar en el servidor.
 
-| Requisitos     | Situación                                                                                                                                                                                                                            |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| RF-01,02,04,06 | Registro, login y separación de roles ya conectados. Mantener pruebas contra despliegue.                                                                                                                                             |
-| RF-03          | Política pendiente del documento aprobado y de persistencia de aceptación/fecha; se conserva la decisión anterior del usuario de dejar la opción preparada.                                                                          |
-| RF-05          | Móvil renueva token; admin tiene sesión en memoria con máximo de 8 horas. Persistencia independiente de dos semanas en web requiere ajuste de almacenamiento de sesiones y política compartida. No cumple todavía el plazo completo. |
-| RF-07,08       | Permisos y captura exclusiva de cámara existentes.                                                                                                                                                                                   |
-| RF-09..13      | Nuevo envío, historial y trabajos conectados. Validaciones geográficas y cooldown solo preventivos en cliente; el servidor no los impone.                                                                                            |
-| RF-14          | Pendiente estado de verificación explícito y reglas 95% / 20 m en backend. checked no es sustituto.                                                                                                                                  |
-| RF-15          | Publicar observación pendiente del feed.                                                                                                                                                                                             |
-| RF-16,17       | Solicitud de revisión e historial conectados; contrato de verificación incompleto.                                                                                                                                                   |
-| RF-18          | No hay DELETE de observación ni borrado de imagen expuesto.                                                                                                                                                                          |
-| RF-19,21,23    | Perímetro de referencia, ubicación, animales propios y capas en móvil.                                                                                                                                                               |
-| RF-20          | Especímenes y detalles existentes; imágenes de referencia GBIF siguen pendientes.                                                                                                                                                    |
-| RF-22          | Zonas oficiales y asociaciones requieren servicios ausentes.                                                                                                                                                                         |
-| RF-24..29      | Feed, publicaciones, comentarios, likes y denuncias siguen sin contratos backend.                                                                                                                                                    |
-| RF-30..35,37   | Misiones, logros, visitas y dato diario requieren backend. Se mantienen pantallas y borradores, sin premios ficticios.                                                                                                               |
-| RF-36,38       | Experiencia y nivel preparados en perfil; falta XP autoritativo y logros/publicaciones.                                                                                                                                              |
-| RF-39,40       | Edición de datos e imágenes existente; restricciones temporales de username y cambio de contraseña necesitan contrato/validación del servidor.                                                                                       |
-| RF-41          | Borrado de cuenta propia y cascadas no disponibles.                                                                                                                                                                                  |
-| RF-42..45      | Catálogo conectado. Alta/cambios geográficos de especímenes y eliminación con asociados continúan protegidos por ausencia de validación geográfica/deduplicación/cascada.                                                            |
-| RF-46          | Consulta administrativa de revisiones conectada ahora.                                                                                                                                                                               |
-| RF-47..51      | Edición de borradores de zonas, misiones, logros y curiosidades; falta persistencia remota.                                                                                                                                          |
-| RF-52..54      | Reportes y moderación de contenido sin endpoints. Las acciones existentes sobre usuarios se conservan.                                                                                                                               |
-| RF-55,56       | Consulta de usuarios y promoción existentes; DTO no expone estado de suspensión y falta protección atómica del último admin.                                                                                                         |
-| RF-57,58       | Delineado de referencia editable/exportable; falta publicación y validación geográfica oficial en backend.                                                                                                                           |
-| RF-59          | Frontends reaccionan a sesión denegada; comprobar revocación/suspensión en despliegue.                                                                                                                                               |
+| Requisitos | Situación |
+| --- | --- |
+| RF-01,02,04,06 | Registro, login y separación de roles ya conectados. Mantener pruebas contra despliegue. |
+| RF-03 | Política pendiente del documento aprobado y de persistencia de aceptación/fecha; se conserva la decisión anterior del usuario de dejar la opción preparada. |
+| RF-05 | Móvil renueva token; admin tiene sesión en memoria con máximo de 8 horas. Persistencia independiente de dos semanas en web requiere ajuste de almacenamiento de sesiones y política compartida. No cumple todavía el plazo completo. |
+| RF-07,08 | Permisos y captura exclusiva de cámara existentes. |
+| RF-09..13 | Nuevo envío, historial y trabajos conectados. Validaciones geográficas y cooldown solo preventivos en cliente; el servidor no los impone. |
+| RF-14 | Pendiente estado de verificación explícito y reglas 95% / 20 m en backend. checked no es sustituto. |
+| RF-15 | Publicar observación pendiente del feed. |
+| RF-16,17 | Solicitud de revisión e historial conectados; contrato de verificación incompleto. |
+| RF-18 | No hay DELETE de observación ni borrado de imagen expuesto. |
+| RF-19,21,23 | Perímetro de referencia, ubicación, animales propios y capas en móvil. |
+| RF-20 | Especímenes y detalles existentes; imágenes de referencia GBIF siguen pendientes. |
+| RF-22 | Zonas oficiales y asociaciones requieren servicios ausentes. |
+| RF-24..29 | Feed, publicaciones, comentarios, likes y denuncias siguen sin contratos backend. |
+| RF-30..35,37 | Misiones, logros, visitas y dato diario requieren backend. Se mantienen pantallas y borradores, sin premios ficticios. |
+| RF-36,38 | Experiencia y nivel preparados en perfil; falta XP autoritativo y logros/publicaciones. |
+| RF-39,40 | Edición de datos e imágenes existente; restricciones temporales de username y cambio de contraseña necesitan contrato/validación del servidor. |
+| RF-41 | Borrado de cuenta propia y cascadas no disponibles. |
+| RF-42..45 | Catálogo conectado. Alta/cambios geográficos de especímenes y eliminación con asociados continúan protegidos por ausencia de validación geográfica/deduplicación/cascada. |
+| RF-46 | Consulta administrativa de revisiones conectada ahora. |
+| RF-47..51 | Edición de borradores de zonas, misiones, logros y curiosidades; falta persistencia remota. |
+| RF-52..54 | Reportes y moderación de contenido sin endpoints. Las acciones existentes sobre usuarios se conservan. |
+| RF-55,56 | Consulta de usuarios y promoción existentes; DTO no expone estado de suspensión y falta protección atómica del último admin. |
+| RF-57,58 | Delineado de referencia editable/exportable; falta publicación y validación geográfica oficial en backend. |
+| RF-59 | Frontends reaccionan a sesión denegada; comprobar revocación/suspensión en despliegue. |
 
 ## Hallazgos concretos para el backend
 

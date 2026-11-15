@@ -1,3 +1,5 @@
+> Estado actualizado: [integración del 15 de noviembre de 2026](docs/INTEGRACION_2026_11_15.md). Incluye funciones conectadas y bloqueos reales del backend.
+
 > Actualización 2026-11-05: consulta [la revisión del SRS v0.3](docs/INTEGRACION_SRS_V03.md) para la conexión de observaciones, perímetro de referencia y pendientes del backend.
 
 # BioJaveriana Admin Web
@@ -26,11 +28,11 @@ Entra con una cuenta **ADMIN ya existente**. No se crean cuentas, claves predete
 - Estética verde y lima, vidrio, ilustraciones originales, navegación lateral y adaptación a pantallas pequeñas.
 - Especies: consulta, búsqueda por nombres, familia, alta y edición con DTO real; eliminación protegida cuando tiene especímenes.
 - Especímenes: consulta, filtros por especie/familia, mapa, detalles, edición de atributos y eliminación. El alta y los cambios de ubicación se preparan en formulario, pero están bloqueados mientras faltan las garantías geográficas del backend.
-- Usuarios: consulta, filtro por rol, detalle, promoción a ADMIN, suspensión, reactivación y eliminación de cuentas USER. Todas las acciones sensibles piden confirmación.
+- Usuarios: consulta, filtro por rol, detalle, promoción a ADMIN, suspensión, reactivación y eliminación de cuentas permitidas, protegiendo el administrador inicial. Todas las acciones sensibles piden confirmación.
 - Zonas verdes, zonas de interés y límite del campus: editores de **borradores locales**, con mapa, puntos, círculos convertibles en polígonos, vértices arrastrables y coordenadas editables por teclado.
 - Misiones, logros y datos curiosos: borradores con validación de recompensas, eventos, objetivos, zona opcional y hasta cinco imágenes.
 - Borradores: ver, editar, eliminar y exportar JSON. Se guardan en este navegador, separados por usuario; no se publican ni aparecen en el móvil. Las imágenes locales tienen un límite de 1 MB cada una para no agotar el almacenamiento del navegador.
-- Consulta de observaciones y solicitudes de revisión conectada al backend. La resolución de revisiones y las denuncias siguen pendientes de servicios.
+- Consulta de observaciones y solicitudes de revisión conectada al backend. Las denuncias ya tienen consulta y cambio de estado; las revisiones se consultan sin adjudicación manual.
 
 ## Lo que impide completar el SRS de extremo a extremo
 
