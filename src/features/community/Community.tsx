@@ -20,6 +20,11 @@ interface Ban {
   banType: string;
   expiresAt: string | null;
 }
+const roleLabel: Record<string, string> = {
+  USER: "Usuario",
+  ADMIN: "Administrador",
+  SUPERADMIN: "Admin. inicial",
+};
 export function Community({ user }: { user: User }) {
   const [tab, setTab] = useState("users"),
     [q, setQ] = useState(""),
@@ -150,51 +155,59 @@ export function Community({ user }: { user: User }) {
                         {u.firstName} {u.lastName}
                       </td>
                       <td>{u.email}</td>
-                      <td>{u.role}</td>
                       <td>
-                        <button onClick={() => show(u)}>Ver perfil</button>
-                        {!protectedUser(u) && (
-                          <>
-                            <button
-                              onClick={() =>
-                                request(
-                                  `/resources/users/${u.id}`,
-                                  "PATCH",
-                                  u.role === "USER"
-                                    ? "Asignar rol de administrador"
-                                    : "Retirar rol de administrador",
-                                  {
-                                    role: u.role === "USER" ? "ADMIN" : "USER",
-                                  },
-                                )
-                              }
-                            >
-                              {u.role === "USER"
-                                ? "Asignar administrador"
-                                : "Retirar administrador"}
-                            </button>
-                            <button
-                              onClick={() => {
-                                setReason("");
-                                setUntil("");
-                                setSuspend(u);
-                              }}
-                            >
-                              Suspender
-                            </button>
-                            <button
-                              onClick={() =>
-                                request(
-                                  `/resources/users/${u.id}`,
-                                  "DELETE",
-                                  "Eliminar cuenta y contenido asociado",
-                                )
-                              }
-                            >
-                              Eliminar
-                            </button>
-                          </>
-                        )}
+                        <Badge tone={u.role === "USER" ? "" : "live"}>
+                          {roleLabel[u.role] ?? u.role}
+                        </Badge>
+                      </td>
+                      <td>
+                        <div className="text-actions">
+                          <button onClick={() => show(u)}>Ver perfil</button>
+                          {!protectedUser(u) && (
+                            <>
+                              <button
+                                onClick={() =>
+                                  request(
+                                    `/resources/users/${u.id}`,
+                                    "PATCH",
+                                    u.role === "USER"
+                                      ? "Asignar rol de administrador"
+                                      : "Retirar rol de administrador",
+                                    {
+                                      role:
+                                        u.role === "USER" ? "ADMIN" : "USER",
+                                    },
+                                  )
+                                }
+                              >
+                                {u.role === "USER"
+                                  ? "Asignar administrador"
+                                  : "Retirar administrador"}
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setReason("");
+                                  setUntil("");
+                                  setSuspend(u);
+                                }}
+                              >
+                                Suspender
+                              </button>
+                              <button
+                                className="danger-soft"
+                                onClick={() =>
+                                  request(
+                                    `/resources/users/${u.id}`,
+                                    "DELETE",
+                                    "Eliminar cuenta y contenido asociado",
+                                  )
+                                }
+                              >
+                                Eliminar
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}

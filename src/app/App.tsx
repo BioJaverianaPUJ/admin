@@ -207,7 +207,6 @@ export function App() {
         </header>
         <main id="main" className="main-content" tabIndex={-1}>
           {notice && <Notice>{notice}</Notice>}
-          {section === "zonas" && <PointsOfInterest />}
           <Suspense fallback={<Loading />}>
             {section === "catalogo" ? (
               <Catalog />
@@ -218,7 +217,9 @@ export function App() {
                 key={section + user.id}
                 section={section}
                 userId={user.id}
-              />
+              >
+                {section === "zonas" && <PointsOfInterest />}
+              </DraftWorkspace>
             )}
           </Suspense>
         </main>

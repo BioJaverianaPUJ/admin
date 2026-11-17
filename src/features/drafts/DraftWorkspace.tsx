@@ -1,5 +1,13 @@
 import { campusReference } from "../../../shared/campus-reference";
-import { useEffect, useState, type FormEvent } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
+const Campus3D = lazy(() => import("../../components/Campus3D"));
 import {
   Plus,
   Pencil,
@@ -12,6 +20,7 @@ import {
   Trophy,
   Lightbulb,
   Search,
+  Box,
 } from "lucide-react";
 import type { Draft, DraftKind, Coordinate } from "../../../shared/types";
 import { draftSchema } from "../../../shared/validation";
@@ -27,6 +36,7 @@ import {
   Modal,
   Field,
   Confirm,
+  Loading,
 } from "../../components/ui";
 import { CampusMap } from "../../components/CampusMap";
 const labels: Record<DraftKind, string> = {
@@ -48,9 +58,12 @@ const icons = {
 export function DraftWorkspace({
   section,
   userId,
+  children,
 }: {
   section: "zonas" | "gamificacion";
   userId: string;
+  /** Contenido conectado al servidor que va justo después del encabezado. */
+  children?: ReactNode;
 }) {
   const kinds: DraftKind[] =
     section === "zonas"
@@ -118,6 +131,13 @@ export function DraftWorkspace({
           </button>
         }
       />
+      {children}
+      {section === "zonas" && <Campus3DPanel />}
+      {children && (
+        <div className="section-divider">
+          <p className="eyebrow">BORRADORES LOCALES</p>
+        </div>
+      )}
       <Notice>
         Estas funciones aún no tienen servicio en el backend. Puedes crear,
         revisar y exportar <strong>borradores locales</strong>; no aparecen en
@@ -786,5 +806,39 @@ function DraftEditor({
         </footer>
       </form>
     </Modal>
+  );
+}
+
+/** Panel con la vista 3D del campus; se carga solo cuando se abre. */
+function Campus3DPanel() {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="glass data-panel campus-3d-panel">
+      <div className="panel-title">
+        <div>
+          <p className="eyebrow">VISTA DEL CAMPUS</p>
+          <h2>Campus en 3D</h2>
+        </div>
+        <button
+          className={open ? "" : "primary"}
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
+          <Box size={17} />
+          {open ? "Ocultar vista 3D" : "Abrir vista 3D"}
+        </button>
+      </div>
+      {open ? (
+        <Suspense fallback={<Loading />}>
+          <Campus3D />
+        </Suspense>
+      ) : (
+        <p className="campus-3d-teaser">
+          Recorre los edificios del campus en volumen para ubicar mejor las
+          zonas verdes y los puntos de interés. Datos ilustrativos de
+          OpenStreetMap.
+        </p>
+      )}
+    </section>
   );
 }

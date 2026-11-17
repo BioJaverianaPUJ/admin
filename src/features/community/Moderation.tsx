@@ -9,6 +9,7 @@ import {
   Pager,
   Modal,
   Confirm,
+  Toggle,
 } from "../../components/ui";
 interface Content {
   id: string;
@@ -172,20 +173,19 @@ export function Moderation({ kind }: { kind: "posts" | "reports" }) {
             ? "Publicaciones de la comunidad"
             : "Denuncias de contenido"}
         </h2>
-        <Badge tone="live">Conectado al backend</Badge>
-        {kind === "reports" && (
-          <label>
-            <input
-              type="checkbox"
+        <div className="panel-actions">
+          {kind === "reports" && (
+            <Toggle
+              label="Solo pendientes"
               checked={pending}
-              onChange={(e) => {
-                setPending(e.target.checked);
+              onChange={(v) => {
+                setPending(v);
                 setPage(0);
               }}
-            />{" "}
-            Solo pendientes
-          </label>
-        )}
+            />
+          )}
+          <Badge tone="live">Conectado al backend</Badge>
+        </div>
       </div>
       {error && <ErrorBox message={error} retry={load} />}{" "}
       {loading ? (

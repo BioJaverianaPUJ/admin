@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import type { Coordinate, Page } from "../../../shared/types";
 import { poiPoints, type Poi } from "../../../shared/poi";
 import { api, errorMessage } from "../../lib/api";
@@ -12,6 +13,7 @@ import {
   Modal,
   Confirm,
   Notice,
+  Toggle,
 } from "../../components/ui";
 export function PointsOfInterest() {
   const [data, setData] = useState<Page<Poi> | null>(null),
@@ -42,9 +44,20 @@ export function PointsOfInterest() {
           <p className="eyebrow">LUGARES DEL CAMPUS</p>
           <h2>Puntos de interés</h2>
         </div>
-        <button className="primary" onClick={() => setEditing(null)}>
-          Crear punto de interés
-        </button>
+        <div className="panel-actions">
+          <Badge tone="live">Conectado al backend</Badge>
+          <button
+            onClick={() => void load()}
+            disabled={loading}
+            title="Actualizar puntos de interés"
+            aria-label="Actualizar puntos de interés"
+          >
+            <RefreshCw size={16} className={loading ? "spin" : undefined} />
+          </button>
+          <button className="primary" onClick={() => setEditing(null)}>
+            <Plus size={17} /> Crear punto de interés
+          </button>
+        </div>
       </div>
       <Notice>
         Estos lugares se guardan en el servidor. El límite de referencia se
@@ -78,17 +91,31 @@ export function PointsOfInterest() {
                     <Badge>{p.active ? "Activo" : "Inactivo"}</Badge>
                   </td>
                   <td>
-                    <button onClick={() => setEditing(p)}>Editar</button>
-                    <button onClick={() => setDeleting(p)}>Eliminar</button>
+                    <div className="row-actions">
+                      <button
+                        title="Editar"
+                        aria-label={`Editar ${p.name}`}
+                        onClick={() => setEditing(p)}
+                      >
+                        <Pencil size={17} />
+                      </button>
+                      <button
+                        title="Eliminar"
+                        aria-label={`Eliminar ${p.name}`}
+                        onClick={() => setDeleting(p)}
+                      >
+                        <Trash2 size={17} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      ) : (
+      ) : !error ? (
         <Empty title="Aún no hay puntos de interés" />
-      )}
+      ) : null}
       {data && (
         <Pager
           page={page}
@@ -297,15 +324,12 @@ function PoiEditor({
             </label>
           </div>
         ))}
-        <label>
-          <input
-            type="checkbox"
-            disabled={!poi}
-            checked={active}
-            onChange={(e) => setActive(e.target.checked)}
-          />{" "}
-          Activo
-        </label>
+        <Toggle
+          label="Activo"
+          disabled={!poi}
+          checked={active}
+          onChange={setActive}
+        />
         {error && <ErrorBox message={error} />}
         <footer className="form-actions">
           <button type="button" disabled={busy} onClick={close}>

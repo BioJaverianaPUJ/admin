@@ -8,6 +8,7 @@ import {
   Pager,
   Modal,
   Notice,
+  Toggle,
 } from "../../components/ui";
 import { CampusMap } from "../../components/CampusMap";
 interface Observation {
@@ -64,17 +65,14 @@ export function ObservationReviews() {
         <Badge tone="live">Consulta conectada</Badge>
       </div>
       <div className="toolbar">
-        <label>
-          <input
-            type="checkbox"
-            checked={onlyRequested}
-            onChange={(e) => {
-              setOnlyRequested(e.target.checked);
-              setPage(0);
-            }}
-          />{" "}
-          Solo solicitudes de revisión
-        </label>
+        <Toggle
+          label="Solo solicitudes de revisión"
+          checked={onlyRequested}
+          onChange={(v) => {
+            setOnlyRequested(v);
+            setPage(0);
+          }}
+        />
         <button onClick={() => setRevision((v) => v + 1)} disabled={loading}>
           Actualizar
         </button>
