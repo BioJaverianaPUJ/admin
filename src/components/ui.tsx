@@ -217,3 +217,31 @@ export function Confirm({
     </Modal>
   );
 }
+/** Interruptor con el estilo de BioJaveriana (reemplaza el checkbox nativo). */
+export function Toggle({
+  label,
+  checked,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <label className={`toggle ${disabled ? "disabled" : ""}`}>
+      <input
+        type="checkbox"
+        role="switch"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      <span className="toggle-track" aria-hidden="true">
+        <span className="toggle-thumb" />
+      </span>
+      <span className="toggle-label">{label}</span>
+    </label>
+  );
+}

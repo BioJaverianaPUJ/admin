@@ -72,9 +72,17 @@ export function createApp({
             "https://tile.openstreetmap.org",
             "https://*.tile.openstreetmap.org",
           ],
-          connectSrc: production
-            ? ["'self'"]
-            : ["'self'", "ws://localhost:5173", "ws://127.0.0.1:5173"],
+          // La vista 3D (MapLibre) descarga las teselas con fetch y usa workers blob.
+          connectSrc: [
+            "'self'",
+            "https://tile.openstreetmap.org",
+            "https://basemaps.cartocdn.com",
+            ...(production
+              ? []
+              : ["ws://localhost:5173", "ws://127.0.0.1:5173"]),
+          ],
+          workerSrc: ["'self'", "blob:"],
+          childSrc: ["'self'", "blob:"],
           objectSrc: ["'none'"],
           frameAncestors: ["'none'"],
           upgradeInsecureRequests: production ? [] : null,

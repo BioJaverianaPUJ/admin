@@ -399,3 +399,36 @@ test("denuncias consultan contenido y envían el estado confirmado", async ({
   await expect(page.getByRole("dialog")).toHaveCount(0);
   expect(writes).toEqual(["/admin-api/social/reports/r1/status"]);
 });
+
+test("un fallo de puntos de interés permite reintentar sin fingir una lista vacía", async ({
+  page,
+}) => {
+  await mock(page);
+  let available = false;
+  await page.route("**/admin-api/social/pois**", async (route) => {
+    await route.fulfill(
+      available
+        ? {
+            json: {
+              content: [],
+              pagination: { totalPages: 0, totalElements: 0 },
+            },
+          }
+        : { status: 502, json: { message: "El servidor no está disponible" } },
+    );
+  });
+  await page.goto("/#zonas");
+  await expect(
+    page.getByText("El servidor no está disponible", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Aún no hay puntos de interés", { exact: true }),
+  ).toHaveCount(0);
+  available = true;
+  await page
+    .getByRole("button", { name: "Actualizar puntos de interés", exact: true })
+    .click();
+  await expect(
+    page.getByText("Aún no hay puntos de interés", { exact: true }),
+  ).toBeVisible();
+});

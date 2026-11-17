@@ -28,6 +28,8 @@ import {
   Confirm,
 } from "../../components/ui";
 import { CampusMap } from "../../components/CampusMap";
+import { SpeciesBadge } from "../../components/SpeciesBadge";
+import { speciesGroup } from "../../lib/speciesGroups";
 const health: Record<string, string> = {
   WELL: "Bueno",
   FAIR: "Regular",
@@ -218,7 +220,7 @@ export function Catalog() {
             <ErrorBox message={r.error} retry={r.reload} />
           ) : r.data?.content.length ? (
             <div className="table-scroll">
-              <table>
+              <table className="catalog-table">
                 <thead>
                   <tr>
                     <th>{tab === "species" ? "Especie" : "Espécimen"}</th>
@@ -236,9 +238,13 @@ export function Catalog() {
                     <tr key={row.id}>
                       <td>
                         <div className="record-name">
-                          <div className="record-icon">
-                            <Leaf size={19} />
-                          </div>
+                          <SpeciesBadge
+                            row={
+                              "family" in row
+                                ? row
+                                : options.find((o) => o.id === row.speciesId)
+                            }
+                          />
                           <div>
                             <strong>{name(row)}</strong>
                             <small>
@@ -252,9 +258,16 @@ export function Catalog() {
                         </div>
                       </td>
                       <td>
-                        {"family" in row
-                          ? row.family
-                          : `${row.latitude.toFixed(5)}, ${row.longitude.toFixed(5)}`}
+                        {"family" in row ? (
+                          <>
+                            {row.family}
+                            <small className="group-label">
+                              {speciesGroup(row).label}
+                            </small>
+                          </>
+                        ) : (
+                          `${row.latitude.toFixed(5)}, ${row.longitude.toFixed(5)}`
+                        )}
                       </td>
                       <td>
                         {"woodDensity" in row ? (
