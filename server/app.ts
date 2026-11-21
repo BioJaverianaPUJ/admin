@@ -56,6 +56,7 @@ export function createApp({
   }
   const cookieName = production ? "__Host-bio-admin" : "bio-admin";
   app.disable("x-powered-by");
+  app.set("trust proxy", 1);
   app.use(
     helmet({
       referrerPolicy: { policy: "strict-origin-when-cross-origin" },
