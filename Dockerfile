@@ -1,3 +1,29 @@
+# ==============================
+# Build stage
+# ==============================
+FROM node:22-alpine AS builder
+
+WORKDIR /app
+
+# Copy dependency files first (layer caching)
+COPY package.json package-lock.json ./
+
+# Install all dependencies (including devDependencies for build)
+RUN npm ci
+
+# Copy source code
+COPY . .
+
+# Pass Vite env vars at build time via build args
+ARG VITE_CARTO_BASEMAP_KEY
+ENV VITE_CARTO_BASEMAP_KEY=${VITE_CARTO_BASEMAP_KEY}
+
+# Build the Vite app (TypeScript check + production build)
+RUN npm run build
+
+# ==============================
+# Production stage
+# ==============================
 FROM node:22-alpine AS production
 
 WORKDIR /app
