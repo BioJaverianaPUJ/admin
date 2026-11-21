@@ -1,0 +1,23 @@
+# Production deployment
+# Usage: docker compose -f docker-compose.prod.yml up -d
+
+services:
+  admin:
+    image: ghcr.io/biojaverianapuj/admin:main
+    container_name: bj-admin
+    restart: unless-stopped
+    ports:
+      - "4174:4174"
+    environment:
+      - NODE_ENV=production
+      - PORT=4174
+      - APP_ORIGIN=https://biojaveriana-admin.downloadablefox.dev
+      - BACKEND_URL=https://biojaveriana.downloadablefox.dev/api/v1
+      - VITE_CARTO_BASEMAP_KEY=default-key
+
+    healthcheck:
+      test: ["CMD-SHELL", "node --import tsx -e \"import http from 'http'; const r = http.get('http://localhost:4174/health', res => { res.on('data', () => {}); res.on('end', () => process.exit(res.statusCode === 200 ? 0 : 1)); });\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
