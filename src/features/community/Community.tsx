@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { User, Page } from "../../../shared/types";
+import type { User } from "../../../shared/types";
 import { useResource } from "../../lib/useResource";
 import { api, errorMessage } from "../../lib/api";
 import {
@@ -12,35 +12,27 @@ import {
   Modal,
   Confirm,
 } from "../../components/ui";
-import { Moderation, splitReason, statuses } from "./Moderation";
-import { formatDate } from "./ContentPreview";
-interface ReceivedReport {
-  id: string;
-  reportType: "POST" | "COMMENT";
-  reason: string;
-  status: keyof typeof statuses;
-  createdAt: string;
+import { Moderation } from "./Moderation";
+import {
+  UserProfile,
+  banSummary,
+  roleLabel,
+  type ManagedUser,
+} from "./UserProfile";
+/** Fecha local en formato de <input type="datetime-local">, desplazada N días. */
+function localInput(days: number) {
+  const d = new Date(Date.now() + days * 86_400_000);
+  d.setSeconds(0, 0);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60_000)
+    .toISOString()
+    .slice(0, 16);
 }
-interface Ban {
-  id: string;
-  reason: string;
-  status: string;
-  banType: string;
-  expiresAt: string | null;
-}
-const roleLabel: Record<string, string> = {
-  USER: "Usuario",
-  ADMIN: "Administrador",
-  SUPERADMIN: "Admin. inicial",
-};
 export function Community({ user }: { user: User }) {
   const [tab, setTab] = useState("users"),
     [q, setQ] = useState(""),
     [role, setRole] = useState(""),
     [state, setState] = useState(""),
-    [view, setView] = useState<User | null>(null),
-    [bans, setBans] = useState<Ban[]>([]),
-    [received, setReceived] = useState<ReceivedReport[] | null>(null),
+    [view, setView] = useState<ManagedUser | null>(null),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState(""),
@@ -53,48 +45,13 @@ export function Community({ user }: { user: User }) {
     [suspend, setSuspend] = useState<User | null>(null),
     [reason, setReason] = useState(""),
     [until, setUntil] = useState("");
-  const r = useResource<User & { status?: "ACTIVE" | "SUSPENDED" }>("users", {
+  const r = useResource<ManagedUser>("users", {
     q,
     role,
     state,
   });
   const protectedUser = (u: User) =>
     u.role === "SUPERADMIN" || u.username === "superadmin" || u.id === user.id;
-  async function show(u: User) {
-    setError("");
-    setView(u);
-    setBans([]);
-    setReceived(null);
-    void (async () => {
-      try {
-        const all: ReceivedReport[] = [];
-        for (let p = 0; ; p++) {
-          const r = await api<Page<ReceivedReport>>(
-            `/social/reports/by-user/${u.id}?page=${p}&size=100`,
-          );
-          all.push(...r.content);
-          if (p + 1 >= r.pagination.totalPages) break;
-        }
-        setReceived(all);
-      } catch {
-        setReceived([]);
-      }
-    })();
-    try {
-      let page = 0;
-      const all: Ban[] = [];
-      while (true) {
-        const b = await api<Page<Ban>>(
-          `/social/users/${u.id}/bans?page=${page}&size=100`,
-        );
-        all.push(...b.content);
-        if (++page >= b.pagination.totalPages) break;
-      }
-      setBans(all);
-    } catch (e) {
-      setError(errorMessage(e));
-    }
-  }
   const request = (
     path: string,
     method: string,
@@ -201,7 +158,14 @@ export function Community({ user }: { user: User }) {
                       </td>
                       <td>
                         {u.status === "SUSPENDED" ? (
-                          <Badge tone="danger">Suspendida</Badge>
+                          <span className="ban-cell">
+                            <Badge tone="danger">Suspendida</Badge>
+                            {u.ban && (
+                              <small className="cell-note">
+                                {banSummary(u.ban)}
+                              </small>
+                            )}
+                          </span>
                         ) : u.status === "ACTIVE" ? (
                           <Badge>Activa</Badge>
                         ) : (
@@ -210,7 +174,7 @@ export function Community({ user }: { user: User }) {
                       </td>
                       <td>
                         <div className="text-actions">
-                          <button onClick={() => show(u)}>Ver perfil</button>
+                          <button onClick={() => setView(u)}>Ver perfil</button>
                           {!protectedUser(u) && (
                             <>
                               <button
@@ -232,15 +196,29 @@ export function Community({ user }: { user: User }) {
                                   ? "Asignar administrador"
                                   : "Retirar administrador"}
                               </button>
-                              <button
-                                onClick={() => {
-                                  setReason("");
-                                  setUntil("");
-                                  setSuspend(u);
-                                }}
-                              >
-                                Suspender
-                              </button>
+                              {u.status === "SUSPENDED" ? (
+                                <button
+                                  onClick={() =>
+                                    request(
+                                      `/social/users/${u.id}/reactivate`,
+                                      "POST",
+                                      `Quitar la suspensión de @${u.username}`,
+                                    )
+                                  }
+                                >
+                                  Quitar suspensión
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => {
+                                    setReason("");
+                                    setUntil("");
+                                    setSuspend(u);
+                                  }}
+                                >
+                                  Suspender
+                                </button>
+                              )}
                               <button
                                 className="danger-soft"
                                 onClick={() =>
@@ -275,116 +253,13 @@ export function Community({ user }: { user: User }) {
           )}
         </section>
       )}
-      {view && (
-        <Modal
-          title={`Perfil de @${view.username}`}
+      {view && !action && (
+        <UserProfile
+          user={view}
+          locked={protectedUser(view)}
           onClose={() => setView(null)}
-        >
-          <p>
-            {view.firstName} {view.lastName}
-          </p>
-          <p>
-            {view.email} · {view.role}
-          </p>
-          {view.profilePictureUrl && (
-            <img
-              src={view.profilePictureUrl}
-              alt="Foto de perfil"
-              width={100}
-            />
-          )}{" "}
-          {view.bannerUrl && (
-            <img
-              src={view.bannerUrl}
-              alt="Banner"
-              style={{ maxWidth: "100%" }}
-            />
-          )}
-          {!protectedUser(view) && (
-            <div className="toolbar">
-              <button
-                onClick={() =>
-                  request(
-                    `/social/users/${view.id}/media/profile-picture`,
-                    "DELETE",
-                    "Eliminar foto de perfil",
-                  )
-                }
-              >
-                Eliminar foto
-              </button>
-              <button
-                onClick={() =>
-                  request(
-                    `/social/users/${view.id}/media/banner`,
-                    "DELETE",
-                    "Eliminar banner",
-                  )
-                }
-              >
-                Eliminar banner
-              </button>
-            </div>
-          )}
-          <h3>Denuncias recibidas</h3>
-          {received === null ? (
-            <p>Cargando denuncias…</p>
-          ) : received.length === 0 ? (
-            <p>Esta cuenta no tiene denuncias.</p>
-          ) : (
-            <ul className="user-reports">
-              {received.map((d) => (
-                <li key={d.id}>
-                  <span>
-                    <strong>{splitReason(d.reason).reason}</strong>
-                    <small className="cell-note">
-                      {d.reportType === "COMMENT"
-                        ? "Comentario"
-                        : "Publicación"}{" "}
-                      · {formatDate(d.createdAt)}
-                    </small>
-                  </span>
-                  <Badge tone={d.status === "PENDING" ? "warn" : ""}>
-                    {statuses[d.status] ?? d.status}
-                  </Badge>
-                </li>
-              ))}
-            </ul>
-          )}
-          <h3>Suspensiones</h3>
-          {bans.length === 0 ? (
-            <p>No hay suspensiones cargadas.</p>
-          ) : (
-            bans.map((b) => (
-              <article key={b.id}>
-                <p>
-                  {b.reason} ·{" "}
-                  {{
-                    ACTIVE: "Activa",
-                    EXPIRED: "Vencida",
-                    CANCELLED: "Cancelada",
-                  }[b.status] ?? b.status}{" "}
-                  {b.expiresAt &&
-                    `· Hasta ${new Date(b.expiresAt).toLocaleString("es-CO")}`}
-                </p>
-                {b.status === "ACTIVE" && !protectedUser(view) && (
-                  <button
-                    onClick={() =>
-                      request(
-                        `/social/bans/${b.id}/cancel`,
-                        "PATCH",
-                        "Cancelar suspensión y reactivar cuenta",
-                      )
-                    }
-                  >
-                    Reactivar cuenta
-                  </button>
-                )}
-              </article>
-            ))
-          )}
-          {error && <ErrorBox message={error} />}
-        </Modal>
+          onRequest={(path, method, label) => request(path, method, label)}
+        />
       )}
       {suspend && (
         <Modal
@@ -411,14 +286,48 @@ export function Community({ user }: { user: User }) {
                 onChange={(e) => setReason(e.target.value)}
               />
             </label>
+            <fieldset className="duration-picker">
+              <legend>Duración</legend>
+              {(
+                [
+                  ["1 día", 1],
+                  ["3 días", 3],
+                  ["7 días", 7],
+                  ["30 días", 30],
+                  ["Indefinida", 0],
+                ] as const
+              ).map(([label, days]) => {
+                const value = days ? localInput(days) : "";
+                const selected = days
+                  ? until !== "" &&
+                    Math.abs(Date.parse(until) - Date.parse(value)) < 90_000
+                  : until === "";
+                return (
+                  <button
+                    type="button"
+                    key={label}
+                    className={selected ? "chip selected" : "chip"}
+                    onClick={() => setUntil(value)}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </fieldset>
             <label>
-              Fecha de finalización (vacío: indefinida)
+              Fecha y hora de finalización (vacío: indefinida)
               <input
                 type="datetime-local"
+                min={localInput(0)}
                 value={until}
                 onChange={(e) => setUntil(e.target.value)}
               />
             </label>
+            <p className="cell-note">
+              {until
+                ? `La cuenta se reactivará sola el ${new Date(until).toLocaleString("es-CO", { dateStyle: "long", timeStyle: "short" })}.`
+                : "La cuenta quedará suspendida hasta que un administrador quite la suspensión."}
+            </p>
             <button className="primary">Revisar suspensión</button>
           </form>
         </Modal>

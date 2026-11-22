@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import type { User } from "../shared/types";
-import { HttpError, type Upstream } from "./upstream";
+import { HttpError, collectPages, type Upstream } from "./upstream";
 import { poiSchema } from "../shared/poi";
 export function registerSocialRoutes(
   app: Express,
@@ -21,6 +21,24 @@ export function registerSocialRoutes(
       .parse(q);
     return `page=${p.page}&size=${p.size}`;
   };
+  const plain = (v: unknown) =>
+    String(v ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+  const filters = z.object({
+    page: z.coerce.number().int().min(0).default(0),
+    size: z.coerce.number().int().min(1).max(100).default(12),
+    q: z.string().trim().max(120).default(""),
+    status: z
+      .enum(["", "PENDING", "UNDER_REVIEW", "RESOLVED", "REJECTED"])
+      .default(""),
+    type: z.enum(["", "POST", "COMMENT"]).default(""),
+    reason: z.string().trim().max(80).default(""),
+    state: z.enum(["", "visible", "banned"]).default(""),
+    photo: z.enum(["", "with", "without"]).default(""),
+    sort: z.enum(["recent", "oldest", "votes"]).default("recent"),
+  });
   app.get("/admin-api/social/:resource", async (req, res) => {
     const s = await authenticate(req, res);
     const resource = z
@@ -35,9 +53,91 @@ export function registerSocialRoutes(
       pois: "/pois",
       bans: "/bans",
     };
-    res.json(
-      await upstream(`${routes[resource]}?${pagination(req.query)}`, s.token),
+    const f = filters.parse({ ...req.query, pending: undefined });
+    const filtering =
+      (resource === "posts" || resource === "reports") &&
+      (f.q ||
+        f.status ||
+        f.type ||
+        f.reason ||
+        f.state ||
+        f.photo ||
+        f.sort !== "recent");
+    if (!filtering)
+      return res.json(
+        await upstream(`${routes[resource]}?${pagination(req.query)}`, s.token),
+      );
+    // Con filtros se recorre el listado completo y se pagina aquí, porque el
+    // backend solo ofrece listados paginados sin búsqueda.
+    type Row = Record<string, unknown> & {
+      author?: { username?: string; firstName?: string; lastName?: string };
+    };
+    const rows = await collectPages<Row>(upstream, routes[resource], s.token);
+    const q = plain(f.q);
+    const reasonOf = (r: Row) => {
+      const raw = String(r.reason ?? "");
+      const i = raw.indexOf(": ");
+      return i > 0 ? raw.slice(0, i) : raw;
+    };
+    const kept = rows.filter((r) => {
+      if (resource === "reports") {
+        if (f.status && r.status !== f.status) return false;
+        if (f.type && r.reportType !== f.type) return false;
+        if (f.reason && plain(reasonOf(r)) !== plain(f.reason)) return false;
+        if (
+          q &&
+          !plain(
+            [
+              r.reason,
+              r.reportedUserUsername,
+              r.reportedUserDisplayName,
+              r.reporterUsername,
+            ].join(" "),
+          ).includes(q)
+        )
+          return false;
+      } else {
+        if (f.state === "banned" && !r.banned) return false;
+        if (f.state === "visible" && r.banned) return false;
+        if (f.photo === "with" && !r.firstImageUrl) return false;
+        if (f.photo === "without" && r.firstImageUrl) return false;
+        if (
+          q &&
+          !plain(
+            [
+              r.title,
+              r.author?.username,
+              r.author?.firstName,
+              r.author?.lastName,
+            ].join(" "),
+          ).includes(q)
+        )
+          return false;
+      }
+      return true;
+    });
+    const time = (r: Row) => Date.parse(String(r.createdAt ?? "")) || 0;
+    kept.sort((a, b) =>
+      f.sort === "oldest"
+        ? time(a) - time(b)
+        : f.sort === "votes"
+          ? Number(b.totalLikes ?? 0) -
+            Number(b.totalDislikes ?? 0) -
+            (Number(a.totalLikes ?? 0) - Number(a.totalDislikes ?? 0))
+          : time(b) - time(a),
     );
+    const totalPages = Math.ceil(kept.length / f.size);
+    res.json({
+      content: kept.slice(f.page * f.size, f.page * f.size + f.size),
+      pagination: {
+        page: f.page,
+        size: f.size,
+        totalElements: kept.length,
+        totalPages,
+        first: f.page === 0,
+        last: f.page >= totalPages - 1,
+      },
+    });
   });
   // Denuncias recibidas por una cuenta (RF-29: asociadas al perfil del autor).
   app.get("/admin-api/social/reports/by-user/:id", async (req, res) => {
@@ -49,11 +149,14 @@ export function registerSocialRoutes(
       ),
     );
   });
-  app.get("/admin-api/social/:resource/:id", async (req, res) => {
+  app.get("/admin-api/social/:resource/:id", async (req, res, next) => {
+    // Las rutas específicas (p. ej. /social/users/:id) se atienden más abajo.
+    const known = z
+      .enum(["posts", "comments", "reports", "pois"])
+      .safeParse(req.params.resource);
+    if (!known.success) return next();
     const s = await authenticate(req, res),
-      resource = z
-        .enum(["posts", "comments", "reports", "pois"])
-        .parse(req.params.resource);
+      resource = known.data;
     res.json(await upstream(`/${resource}/${uuid(req.params.id)}`, s.token));
   });
   app.get("/admin-api/social/posts/:id/comments", async (req, res) => {
@@ -197,7 +300,46 @@ export function registerSocialRoutes(
         400,
         "La suspensión temporal requiere una fecha futura.",
       );
+    // El backend solo admite una suspensión activa por cuenta.
+    if ((await activeBans(body.userId, s.token)).length)
+      throw new HttpError(
+        409,
+        "Esta cuenta ya tiene una suspensión activa. Reactívala antes de aplicar otra.",
+      );
     res.status(201).json(await upstream("/bans", s.token, "POST", body));
+  });
+  async function activeBans(userId: string, token: string) {
+    const bans = await collectPages<{
+      id: string;
+      status: string;
+      expiresAt: string | null;
+    }>(upstream, `/bans/user/${userId}`, token);
+    return bans.filter((b) => b.status === "ACTIVE");
+  }
+  app.post("/admin-api/social/users/:id/reactivate", async (req, res) => {
+    const s = await authenticate(req, res),
+      id = uuid(req.params.id),
+      active = await activeBans(id, s.token);
+    for (const b of active)
+      await upstream(`/bans/${b.id}/cancel`, s.token, "PATCH");
+    res.json({ cancelled: active.length });
+  });
+  app.get("/admin-api/social/users/:id", async (req, res) => {
+    const s = await authenticate(req, res);
+    const { gender: _gender, ...user } = await upstream<User>(
+      `/users/${uuid(req.params.id)}`,
+      s.token,
+    );
+    res.json(user);
+  });
+  app.get("/admin-api/social/users/:id/posts", async (req, res) => {
+    const s = await authenticate(req, res);
+    res.json(
+      await upstream(
+        `/posts/authors/${uuid(req.params.id)}?${pagination(req.query)}`,
+        s.token,
+      ),
+    );
   });
   app.patch("/admin-api/social/bans/:id/cancel", async (req, res) => {
     const s = await authenticate(req, res);

@@ -53,6 +53,30 @@ async function mock(page: Page, authenticated = true) {
     } else if (path.endsWith("/achievements")) {
       status = 501;
       body = { message: "Pendiente de despliegue" };
+    } else if (path.endsWith("/campus/overview")) {
+      body = {
+        species,
+        specimens: [
+          {
+            id: "s1",
+            speciesId: species[0].id,
+            latitude: 4.6286,
+            longitude: -74.0637,
+            circumference: 80,
+            height: 9,
+            healthStatus: "WELL",
+            notes: "",
+            observationDate: null,
+            createdAt: "2026-11-01T12:00:00Z",
+          },
+        ],
+        pois: [],
+        sightings: [],
+      };
+    } else if (path.endsWith("/missions") || path.endsWith("/funfacts")) {
+      body = [];
+    } else if (path.endsWith("/funfacts/today")) {
+      body = { displayDate: "2026-11-22", funFact: null };
     } else if (path.includes("/social/")) {
       body = {
         content: [],
@@ -148,39 +172,149 @@ test("login, catálogo, formulario real y cierre de sesión", async ({
     page.getByRole("button", { name: "Entrar al módulo" }),
   ).toBeVisible();
 });
-test("zonas y gamificación guardan únicamente borradores locales", async ({
+test("zonas muestran el mapa general y las misiones se crean en el servidor", async ({
   page,
 }) => {
-  const writes = await mock(page);
+  await mock(page);
   await page.goto("/#zonas");
-  await page.getByRole("button", { name: "Nuevo borrador" }).click();
-  await page.getByLabel("Nombre *", { exact: true }).fill("Jardín de prueba");
-  await page.getByLabel("Descripción *").fill("Solo para revisión visual");
-  await page.getByText("Editar coordenadas con teclado").click();
-  for (let i = 0; i < 3; i++)
-    await page.getByRole("button", { name: "Añadir vértice" }).click();
-  await page
-    .getByLabel("Latitud del vértice 2", { exact: true })
-    .fill("4.6285");
-  await page
-    .getByLabel("Longitud del vértice 3", { exact: true })
-    .fill("-74.0640");
+  const overview = page.getByRole("region", {
+    name: "Mapa general del campus",
+  });
+  await expect(
+    overview.getByText("Especímenes", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    overview.locator(".leaflet-overlay-pane canvas").first(),
+  ).toBeVisible();
+  await expect(page.getByText(/borrador/i)).toHaveCount(0);
   await page.screenshot({
-    path: "test-results/zona-editor.png",
+    path: "test-results/zonas-mapa.png",
     fullPage: true,
   });
-  await page.getByRole("button", { name: "Guardar borrador local" }).click();
-  await expect(
-    page.getByText("Borrador guardado en este navegador. No se ha publicado."),
-  ).toBeVisible();
+  let payload: Record<string, unknown> | null = null;
+  await page.route("**/admin-api/missions", async (route) => {
+    if (route.request().method() === "POST") {
+      payload = route.request().postDataJSON();
+      return route.fulfill({ status: 201, json: { id: "m1", ...payload } });
+    }
+    return route.fulfill({
+      json: payload
+        ? [
+            {
+              id: "m1",
+              ...payload,
+              predicate: { metric: "observations", op: "gte", value: 3 },
+              active: true,
+            },
+          ]
+        : [],
+    });
+  });
   await page.getByRole("link", { name: /Gamificación/ }).click();
-  await page.getByRole("button", { name: "Nuevo borrador" }).click();
-  await page.getByLabel("Nombre *", { exact: true }).fill("Exploradores");
-  await page.getByLabel("Descripción *").fill("Una misión de prueba");
-  await page.getByLabel("Objetivo *", { exact: true }).fill("Visitar una zona");
-  await page.getByRole("button", { name: "Guardar borrador local" }).click();
-  await expect(page.getByText("Exploradores", { exact: true })).toBeVisible();
-  expect(writes).toEqual([]);
+  await page.getByRole("button", { name: "Nueva misión" }).click();
+  const dialog = page.getByRole("dialog", { name: "Nueva misión" });
+  await dialog.getByLabel("Identificador único").fill("semana-verde");
+  await dialog.getByLabel("Tipo de misión").selectOption("EVENT");
+  await dialog.getByLabel("Nombre", { exact: true }).fill("Semana verde");
+  await dialog.getByLabel("Cantidad necesaria").fill("3");
+  await dialog.getByLabel("Inicio del evento").fill("2030-01-01T08:00");
+  await dialog.getByLabel("Fin del evento").fill("2030-01-08T08:00");
+  await dialog.getByRole("button", { name: "Crear misión" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Semana verde" }),
+  ).toBeVisible();
+  expect(payload).toMatchObject({
+    slug: "semana-verde",
+    type: "EVENT",
+    metric: "observations",
+    target: 3,
+    xpReward: 10,
+  });
+  expect(typeof (payload as unknown as { startTime: string }).startTime).toBe(
+    "string",
+  );
+  await page.screenshot({ path: "test-results/misiones.png", fullPage: true });
+});
+test("perfil completo con banner y quitar una suspensión", async ({ page }) => {
+  await mock(page);
+  const suspended = {
+    ...admin,
+    id: "543e5eda-be65-40bc-b896-a4daad3f3d85",
+    role: "USER",
+    username: "explorador",
+    firstName: "Ana",
+    lastName: "Pérez",
+    status: "SUSPENDED",
+    ban: {
+      id: "b1",
+      ids: ["b1"],
+      reason: "Spam",
+      banType: "TEMPORAL",
+      expiresAt: new Date(Date.now() + 2 * 86_400_000).toISOString(),
+    },
+  };
+  const page1 = (rows: unknown[]) => ({
+    content: rows,
+    pagination: {
+      page: 0,
+      size: 12,
+      totalElements: rows.length,
+      totalPages: 1,
+      first: true,
+      last: true,
+    },
+  });
+  await page.route("**/admin-api/resources/users**", (route) =>
+    route.fulfill({ json: page1([admin, suspended]) }),
+  );
+  let reactivated = false;
+  await page.route(`**/admin-api/social/users/${suspended.id}**`, (route) => {
+    const url = route.request().url();
+    if (url.endsWith("/reactivate")) {
+      reactivated = true;
+      return route.fulfill({ json: { cancelled: 1 } });
+    }
+    if (url.includes("/bans"))
+      return route.fulfill({
+        json: page1([
+          {
+            id: "b1",
+            reason: "Spam",
+            status: "ACTIVE",
+            banType: "TEMPORAL",
+            expiresAt: suspended.ban.expiresAt,
+          },
+        ]),
+      });
+    if (url.includes("/posts")) return route.fulfill({ json: page1([]) });
+    return route.fulfill({
+      json: {
+        ...suspended,
+        bannerUrl:
+          "data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==",
+        profilePictureUrl:
+          "data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==",
+      },
+    });
+  });
+  await page.goto("/#comunidad");
+  const row = page.getByRole("row").filter({ hasText: "@explorador" });
+  await expect(row.getByText(/quedan 1 d|quedan 2 d/)).toBeVisible();
+  await row.getByRole("button", { name: "Ver perfil" }).click();
+  const dialog = page.getByRole("dialog", { name: "Perfil de @explorador" });
+  await expect(dialog.getByAltText("Banner del perfil")).toBeVisible();
+  await expect(dialog.getByAltText("Foto de perfil")).toBeVisible();
+  await expect(
+    dialog.getByText("Cuenta suspendida temporalmente"),
+  ).toBeVisible();
+  await page.screenshot({
+    path: "test-results/perfil-usuario.png",
+    fullPage: true,
+  });
+  await dialog.getByRole("button", { name: "Quitar suspensión" }).click();
+  await page.getByRole("button", { name: "Confirmar cambio" }).click();
+  await expect.poll(() => reactivated).toBe(true);
 });
 test("usuarios, acciones protegidas y pantalla pequeña", async ({ page }) => {
   await mock(page);
@@ -244,9 +378,7 @@ test("accesibilidad del acceso y catálogo", async ({ page }) => {
   ).toEqual([]);
 });
 
-test("consulta revisiones reales del contrato y abre el perímetro editable", async ({
-  page,
-}) => {
+test("consulta revisiones reales del contrato", async ({ page }) => {
   await mock(page);
   await page.route("**/admin-api/observations?**", (route) =>
     route.fulfill({
@@ -289,25 +421,6 @@ test("consulta revisiones reales del contrato y abre el perímetro editable", as
     path: "test-results/observacion-actualizada.png",
     fullPage: true,
   });
-  await page.keyboard.press("Escape");
-  await page.goto("/#zonas");
-  await page
-    .getByRole("button", { name: "Límite del campus", exact: true })
-    .click();
-  await expect(
-    page.getByRole("heading", { name: "Perímetro de referencia del campus" }),
-  ).toBeVisible();
-  await expect(page.locator(".leaflet-tile-loaded").first()).toBeVisible({
-    timeout: 20000,
-  });
-  await page.screenshot({
-    path: "test-results/perimetro-campus.png",
-    fullPage: true,
-  });
-  await page
-    .getByRole("button", { name: "Editar copia del perímetro" })
-    .click();
-  await expect(page.getByRole("dialog")).toContainText("Campus");
 });
 test("puntos de interés se guardan en el servidor y conservan la geometría", async ({
   page,
@@ -468,8 +581,9 @@ test("un fallo de puntos de interés permite reintentar sin fingir una lista vac
 test("logros publicados, creación y estado de despliegue", async ({ page }) => {
   await mock(page);
   await page.goto("/#gamificacion");
+  await page.getByRole("tab", { name: "Logros" }).click();
   await expect(
-    page.getByText(/El servicio de logros está pendiente/),
+    page.getByText(/El servicio de logros no está disponible/),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Nuevo logro", exact: true }),

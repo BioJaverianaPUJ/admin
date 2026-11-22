@@ -48,7 +48,7 @@ export function Achievements() {
         if (!controller.signal.aborted)
           setError(
             e instanceof ApiError && e.status === 501
-              ? "El servicio de logros está pendiente de despliegue. Los borradores locales se conservan debajo."
+              ? "El servicio de logros no está disponible en el backend desplegado."
               : errorMessage(e),
           );
       })

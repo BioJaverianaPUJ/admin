@@ -1,5 +1,3 @@
-import { PointsOfInterest } from "../features/drafts/PointsOfInterest";
-import { Achievements } from "../features/drafts/Achievements";
 import { lazy, Suspense, useEffect, useState } from "react";
 import {
   Leaf,
@@ -10,7 +8,6 @@ import {
   Menu,
   X,
   ArrowUpRight,
-  ShieldCheck,
 } from "lucide-react";
 import type { User } from "../../shared/types";
 import { api } from "../lib/api";
@@ -24,12 +21,15 @@ const Community = lazy(() =>
     default: m.Community,
   })),
 );
-const DraftWorkspace = lazy(() =>
-  import("../features/drafts/DraftWorkspace").then((m) => ({
-    default: m.DraftWorkspace,
+const Zones = lazy(() =>
+  import("../features/zones/Zones").then((m) => ({ default: m.Zones })),
+);
+const Gamification = lazy(() =>
+  import("../features/gamification/Gamification").then((m) => ({
+    default: m.Gamification,
   })),
 );
-import { Badge, Loading, Notice } from "../components/ui";
+import { Loading, Notice } from "../components/ui";
 type Section = "catalogo" | "zonas" | "gamificacion" | "comunidad";
 const nav = [
   {
@@ -203,9 +203,6 @@ export function App() {
             Administración <span className="slash">/</span>{" "}
             {nav.find((n) => n.id === section)?.label}
           </span>
-          <Badge>
-            <ShieldCheck size={13} /> Acceso protegido
-          </Badge>
         </header>
         <main id="main" className="main-content" tabIndex={-1}>
           {notice && <Notice>{notice}</Notice>}
@@ -215,15 +212,10 @@ export function App() {
                 <Catalog />
               ) : section === "comunidad" ? (
                 <Community user={user} />
+              ) : section === "zonas" ? (
+                <Zones />
               ) : (
-                <DraftWorkspace
-                  key={section + user.id}
-                  section={section}
-                  userId={user.id}
-                >
-                  {section === "zonas" && <PointsOfInterest />}
-                  {section === "gamificacion" && <Achievements />}
-                </DraftWorkspace>
+                <Gamification />
               )}
             </Suspense>
           </ErrorBoundary>

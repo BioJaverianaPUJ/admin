@@ -1,4 +1,4 @@
-import { campusReference } from "../../shared/campus-reference";
+import { campusAllPoints, campusAreas } from "../../shared/campus-reference";
 import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -34,7 +34,7 @@ export function CampusMap({
     map.current = m;
     if (points.length !== 1)
       m.fitBounds(
-        L.latLngBounds(points.length >= 3 ? points : campusReference),
+        L.latLngBounds(points.length >= 3 ? points : campusAllPoints),
         { padding: [24, 24], animate: false },
       );
     const cartoKey = import.meta.env.VITE_CARTO_BASEMAP_KEY?.trim();
@@ -71,7 +71,7 @@ export function CampusMap({
       m.invalidateSize();
       if (!initialFit && points.length !== 1 && el.current!.clientHeight > 0) {
         m.fitBounds(
-          L.latLngBounds(points.length >= 3 ? points : campusReference),
+          L.latLngBounds(points.length >= 3 ? points : campusAllPoints),
           { padding: [24, 24], animate: false },
         );
         initialFit = true;
@@ -90,7 +90,7 @@ export function CampusMap({
     const group = layer.current;
     if (!group) return;
     group.clearLayers();
-    const perimeter = boundary.length >= 3 ? boundary : campusReference;
+    const perimeters = boundary.length >= 3 ? [boundary] : campusAreas;
     L.polygon(
       [
         [
@@ -99,7 +99,7 @@ export function CampusMap({
           [4, -73],
           [4, -75],
         ],
-        perimeter,
+        ...perimeters,
       ],
       {
         stroke: false,
@@ -108,12 +108,13 @@ export function CampusMap({
         interactive: false,
       },
     ).addTo(group);
-    L.polygon(perimeter, {
-      color: "#285d46",
-      weight: 3,
-      fillOpacity: 0.03,
-      interactive: false,
-    }).addTo(group);
+    for (const perimeter of perimeters)
+      L.polygon(perimeter, {
+        color: "#285d46",
+        weight: 3,
+        fillOpacity: 0.03,
+        interactive: false,
+      }).addTo(group);
     if (points.length >= 3 && mode !== "point" && mode !== "circle")
       L.polygon(points, { color, fillOpacity: 0.2 }).addTo(group);
     if (mode === "circle" && points[0])
@@ -143,7 +144,7 @@ export function CampusMap({
           type="button"
           onClick={() =>
             map.current?.fitBounds(
-              L.latLngBounds(boundary.length >= 3 ? boundary : campusReference),
+              L.latLngBounds(boundary.length >= 3 ? boundary : campusAllPoints),
               { padding: [24, 24], animate: false },
             )
           }

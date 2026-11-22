@@ -1,56 +1,67 @@
 import { describe, it, expect } from "vitest";
+import { speciesSchema, specimenSchema } from "../../shared/validation";
 import {
-  speciesSchema,
-  specimenSchema,
-  draftSchema,
-} from "../../shared/validation";
+  funFactSchema,
+  missionPayload,
+  missionSchema,
+} from "../../shared/gamification";
 import { inside, validPolygon, contained } from "../../shared/geometry";
-import type { Draft } from "../../shared/types";
-const draft: Draft = {
-  id: "d",
-  kind: "mission",
-  title: "Explora",
+const mission = {
+  slug: "explora",
+  name: "Explora",
   description: "Visita el campus",
-  color: "#aabbcc",
-  points: [],
-  xp: 5,
-  period: "DAILY",
+  xpReward: 5,
+  type: "DAILY",
+  metric: "poi_visited",
   target: 1,
-  objective: "Visitar una zona",
-  zoneId: "",
-  startsAt: "",
-  endsAt: "",
-  images: [],
-  updatedAt: new Date().toISOString(),
 };
 describe("Validaciones del SRS", () => {
   it("rechaza recompensas fuera de 5, 10, 15 y 20", () => {
-    for (const xp of [0, 6, 21, 100])
-      expect(draftSchema.safeParse({ ...draft, xp }).success).toBe(false);
-    for (const xp of [5, 10, 15, 20])
-      expect(draftSchema.safeParse({ ...draft, xp }).success).toBe(true);
+    for (const xpReward of [0, 6, 21, 100])
+      expect(missionSchema.safeParse({ ...mission, xpReward }).success).toBe(
+        false,
+      );
+    for (const xpReward of [5, 10, 15, 20])
+      expect(missionSchema.safeParse({ ...mission, xpReward }).success).toBe(
+        true,
+      );
   });
-  it("exige fechas ordenadas para eventos", () => {
-    expect(draftSchema.safeParse({ ...draft, period: "EVENT" }).success).toBe(
+  it("exige fechas ordenadas para eventos y ninguna para diarias", () => {
+    expect(missionSchema.safeParse({ ...mission, type: "EVENT" }).success).toBe(
       false,
     );
     expect(
-      draftSchema.safeParse({
-        ...draft,
-        period: "EVENT",
-        startsAt: "2026-11-10T10:00",
-        endsAt: "2026-11-09T10:00",
+      missionSchema.safeParse({
+        ...mission,
+        type: "EVENT",
+        startTime: "2026-11-10T10:00:00Z",
+        endTime: "2026-11-09T10:00:00Z",
       }).success,
     ).toBe(false);
-  });
-  it("rechaza más de cinco imágenes", () =>
     expect(
-      draftSchema.safeParse({
-        ...draft,
-        kind: "curiosity",
-        images: Array(6).fill("data:image/png;base64,a"),
+      missionSchema.safeParse({
+        ...mission,
+        startTime: "2026-11-10T10:00:00Z",
+        endTime: "2026-11-11T10:00:00Z",
       }).success,
-    ).toBe(false));
+    ).toBe(false);
+    expect(missionPayload(mission).predicate).toEqual({
+      metric: "poi_visited",
+      op: "gte",
+      value: 1,
+    });
+  });
+  it("rechaza más de cinco imágenes en un dato curioso", () => {
+    const fact = { title: "Dato", description: "Texto" };
+    expect(
+      funFactSchema.safeParse({ ...fact, imageKeys: Array(6).fill("k") })
+        .success,
+    ).toBe(false);
+    expect(
+      funFactSchema.safeParse({ ...fact, imageKeys: Array(5).fill("k") })
+        .success,
+    ).toBe(true);
+  });
   it("rechaza especie vacía y densidad negativa", () => {
     expect(
       speciesSchema.safeParse({

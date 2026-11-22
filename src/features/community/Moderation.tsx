@@ -23,7 +23,6 @@ import {
   Pager,
   Modal,
   Confirm,
-  Toggle,
   Notice,
 } from "../../components/ui";
 import {
@@ -102,10 +101,30 @@ async function allPages<T>(path: string) {
   }
 }
 
+const emptyFilters = {
+  q: "",
+  status: "",
+  type: "",
+  reason: "",
+  state: "",
+  photo: "",
+  sort: "recent",
+};
+/** Motivos de denuncia de la app móvil (SRS 3.1.1). */
+const reportReasons = [
+  "Acoso",
+  "Discriminación",
+  "Contenido violento",
+  "Contenido sexual",
+  "Spam",
+  "Información falsa",
+];
+
 export function Moderation({ kind }: { kind: "posts" | "reports" }) {
   const [data, setData] = useState<Page<ReportRow & PostContent> | null>(null),
     [page, setPage] = useState(0),
-    [pending, setPending] = useState(false),
+    [filters, setFilters] = useState(emptyFilters),
+    [typed, setTyped] = useState(""),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(false),
     [openId, setOpenId] = useState<string | null>(null);
@@ -113,21 +132,39 @@ export function Moderation({ kind }: { kind: "posts" | "reports" }) {
     setLoading(true);
     setError("");
     try {
+      const params = new URLSearchParams({ page: String(page), size: "12" });
+      for (const [k, v] of Object.entries(filters))
+        if (v && !(k === "sort" && v === "recent")) params.set(k, v);
       setData(
-        await api<Page<ReportRow & PostContent>>(
-          `/social/${kind}?page=${page}&size=12&pending=${pending}`,
-        ),
+        await api<Page<ReportRow & PostContent>>(`/social/${kind}?${params}`),
       );
     } catch (e) {
       setError(errorMessage(e));
     } finally {
       setLoading(false);
     }
-  }, [kind, page, pending]);
+  }, [kind, page, filters]);
   useEffect(() => {
     setPage(0);
     setOpenId(null);
+    setFilters(emptyFilters);
+    setTyped("");
   }, [kind]);
+  // La búsqueda espera a que se deje de escribir.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setFilters((f) => (f.q === typed.trim() ? f : { ...f, q: typed.trim() }));
+      setPage(0);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [typed]);
+  const set = (k: keyof typeof emptyFilters, v: string) => {
+    setFilters((f) => ({ ...f, [k]: v }));
+    setPage(0);
+  };
+  const active = Object.entries(filters).some(
+    ([k, v]) => v && !(k === "sort" && v === "recent"),
+  );
   useEffect(() => {
     void load();
   }, [load]);
@@ -140,18 +177,113 @@ export function Moderation({ kind }: { kind: "posts" | "reports" }) {
             : "Denuncias de contenido"}
         </h2>
         <div className="panel-actions">
-          {kind === "reports" && (
-            <Toggle
-              label="Solo no revisadas"
-              checked={pending}
-              onChange={(v) => {
-                setPending(v);
-                setPage(0);
-              }}
-            />
-          )}
           <Badge tone="live">Conectado al backend</Badge>
         </div>
+      </div>
+      {kind === "reports" && (
+        <div className="group-chips">
+          {(
+            [["", "Todas"], ...Object.entries(statuses)] as [string, string][]
+          ).map(([v, label]) => (
+            <button
+              key={v || "all"}
+              className={filters.status === v ? "selected" : ""}
+              onClick={() => set("status", v)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="toolbar">
+        <label>
+          Buscar
+          <input
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            placeholder={
+              kind === "reports"
+                ? "Usuario, motivo o descripción"
+                : "Título o autor"
+            }
+          />
+        </label>
+        {kind === "reports" ? (
+          <>
+            <label>
+              Contenido
+              <select
+                value={filters.type}
+                onChange={(e) => set("type", e.target.value)}
+              >
+                <option value="">Todo</option>
+                <option value="POST">Publicaciones</option>
+                <option value="COMMENT">Comentarios</option>
+              </select>
+            </label>
+            <label>
+              Motivo
+              <select
+                value={filters.reason}
+                onChange={(e) => set("reason", e.target.value)}
+              >
+                <option value="">Todos</option>
+                {reportReasons.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
+        ) : (
+          <>
+            <label>
+              Estado
+              <select
+                value={filters.state}
+                onChange={(e) => set("state", e.target.value)}
+              >
+                <option value="">Todas</option>
+                <option value="visible">Sin bloquear</option>
+                <option value="banned">Bloqueadas</option>
+              </select>
+            </label>
+            <label>
+              Fotos
+              <select
+                value={filters.photo}
+                onChange={(e) => set("photo", e.target.value)}
+              >
+                <option value="">Todas</option>
+                <option value="with">Con foto</option>
+                <option value="without">Sin foto</option>
+              </select>
+            </label>
+          </>
+        )}
+        <label>
+          Orden
+          <select
+            value={filters.sort}
+            onChange={(e) => set("sort", e.target.value)}
+          >
+            <option value="recent">Más recientes</option>
+            <option value="oldest">Más antiguas</option>
+            {kind === "posts" && <option value="votes">Más votadas</option>}
+          </select>
+        </label>
+        {active && (
+          <button
+            onClick={() => {
+              setFilters(emptyFilters);
+              setTyped("");
+              setPage(0);
+            }}
+          >
+            Limpiar filtros
+          </button>
+        )}
       </div>
       {error && <ErrorBox message={error} retry={load} />}
       {loading ? (
@@ -272,10 +404,12 @@ export function Moderation({ kind }: { kind: "posts" | "reports" }) {
         <Empty
           title={
             kind === "reports"
-              ? pending
-                ? "No hay denuncias sin revisar"
+              ? active
+                ? "Ninguna denuncia coincide con los filtros"
                 : "No hay denuncias"
-              : "No hay publicaciones"
+              : active
+                ? "Ninguna publicación coincide con los filtros"
+                : "No hay publicaciones"
           }
         />
       )}

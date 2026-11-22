@@ -6,12 +6,14 @@ import {
   Compass,
   Layers,
   LocateFixed,
+  Navigation,
   RotateCw,
 } from "lucide-react";
-import { campusReference } from "../../shared/campus-reference";
+import { campusAllPoints, campusAreas } from "../../shared/campus-reference";
+import { useUserLocation } from "../lib/useUserLocation";
 
-const lngs = campusReference.map(([, lng]) => lng);
-const lats = campusReference.map(([lat]) => lat);
+const lngs = campusAllPoints.map(([, lng]) => lng);
+const lats = campusAllPoints.map(([lat]) => lat);
 const campusBounds: [[number, number], [number, number]] = [
   [Math.min(...lngs), Math.min(...lats)],
   [Math.max(...lngs), Math.max(...lats)],
@@ -34,9 +36,12 @@ function tileUrl() {
 }
 
 function style(): StyleSpecification {
-  const ring = campusReference.map(([lat, lng]) => [lng, lat]);
-  const [first, last] = [ring[0], ring[ring.length - 1]];
-  if (first[0] !== last[0] || first[1] !== last[1]) ring.push(first);
+  const rings = campusAreas.map((area) => {
+    const ring = area.map(([lat, lng]) => [lng, lat]);
+    const [first, last] = [ring[0], ring[ring.length - 1]];
+    if (first[0] !== last[0] || first[1] !== last[1]) ring.push(first);
+    return [ring];
+  });
   const height = ["coalesce", ["get", "height"], 6];
   return {
     version: 8,
@@ -59,7 +64,7 @@ function style(): StyleSpecification {
         data: {
           type: "Feature",
           properties: {},
-          geometry: { type: "Polygon", coordinates: [ring] },
+          geometry: { type: "MultiPolygon", coordinates: rings },
         },
       },
     },
@@ -141,6 +146,37 @@ export default function Campus3D() {
     detail: string;
   } | null>(null);
   const [failed, setFailed] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const { location, error: locationError } = useUserLocation(locating);
+  const marker = useRef<maplibregl.Marker | null>(null);
+  const centered = useRef(false);
+
+  // Punto de la persona sobre el mapa 3D.
+  useEffect(() => {
+    const m = map.current;
+    if (!m) return;
+    if (!locating || !location) {
+      marker.current?.remove();
+      marker.current = null;
+      return;
+    }
+    if (!marker.current) {
+      const el = document.createElement("div");
+      el.className = "user-dot";
+      el.innerHTML = "<span></span>";
+      el.title = "Estás aquí";
+      marker.current = new maplibregl.Marker({ element: el });
+    }
+    marker.current.setLngLat([location.lng, location.lat]).addTo(m);
+    if (!centered.current) {
+      centered.current = true;
+      m.easeTo({
+        center: [location.lng, location.lat],
+        zoom: 17.5,
+        duration: 800,
+      });
+    }
+  }, [location, locating]);
 
   useEffect(() => {
     if (!box.current) return;
@@ -187,6 +223,8 @@ export default function Campus3D() {
       m.getCanvas().style.cursor = "";
     });
     return () => {
+      marker.current?.remove();
+      marker.current = null;
       m.remove();
       map.current = null;
     };
@@ -244,10 +282,30 @@ export default function Campus3D() {
         >
           <LocateFixed size={18} />
         </button>
+        <button
+          title="Mi ubicación"
+          aria-label="Mi ubicación"
+          aria-pressed={locating}
+          className={locating ? "on" : ""}
+          onClick={() => {
+            centered.current = false;
+            if (locating && location)
+              map.current?.easeTo({
+                center: [location.lng, location.lat],
+                zoom: 17.5,
+                duration: 700,
+              });
+            else setLocating(true);
+          }}
+        >
+          <Navigation size={18} />
+        </button>
       </div>
       <div className="campus-3d-info" aria-live="polite">
         <Building2 size={18} />
-        {selected ? (
+        {locating && locationError ? (
+          <span>{locationError}</span>
+        ) : selected ? (
           <div>
             <strong>{selected.name}</strong>
             {selected.detail && <small>{selected.detail}</small>}

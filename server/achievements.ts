@@ -5,7 +5,7 @@ import {
   achievementPayload,
   achievementUpdatePayload,
 } from "../shared/achievements";
-import { HttpError, type Upstream } from "./upstream";
+import { HttpError, collectPages, type Upstream } from "./upstream";
 
 export function registerAchievementRoutes(
   app: Express,
@@ -39,7 +39,16 @@ export function registerAchievementRoutes(
   }
   app.get("/admin-api/achievements", async (req, res) => {
     const s = await authenticate(req, res);
-    res.json(await forward("/achievements", s.token));
+    try {
+      res.json(await collectPages(upstream, "/achievements", s.token));
+    } catch (e) {
+      if (e instanceof HttpError && [404, 501].includes(e.status))
+        throw new HttpError(
+          501,
+          "Los logros todavía no están habilitados en el backend desplegado.",
+        );
+      throw e;
+    }
   });
   app.post("/admin-api/achievements", async (req, res) => {
     const s = await authenticate(req, res);

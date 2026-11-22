@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { Coordinate } from "./types";
 import { contained, inside, validPolygon } from "./geometry";
-import { campusReference } from "./campus-reference";
+import { campusAreas } from "./campus-reference";
 export const poiSchema = z
   .object({
     name: z.string().trim().min(1).max(200),
@@ -37,7 +37,9 @@ export const poiSchema = z
         points[0][1] === points.at(-1)![1]
       )
         points.pop();
-      valid = validPolygon(points) && contained(points, campusReference);
+      valid =
+        validPolygon(points) &&
+        campusAreas.some((area) => contained(points, area));
     } else if (
       p.centerLatitude !== undefined &&
       p.centerLongitude !== undefined &&
@@ -53,8 +55,9 @@ export const poiSchema = z
               (111320 * Math.cos((center[0] * Math.PI) / 180)),
         ] as Coordinate;
       });
-      valid =
-        inside(center, campusReference) && contained(ring, campusReference);
+      valid = campusAreas.some(
+        (area) => inside(center, area) && contained(ring, area),
+      );
     }
     if (!valid)
       ctx.addIssue({

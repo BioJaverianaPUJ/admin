@@ -80,3 +80,28 @@ export function createUpstream(base: string): Upstream {
     return data as T;
   };
 }
+
+/** Recorre todas las páginas de un listado paginado del backend. */
+export async function collectPages<T>(
+  upstream: Upstream,
+  path: string,
+  token: string,
+  maxPages = 50,
+): Promise<T[]> {
+  const items: T[] = [];
+  const sep = path.includes("?") ? "&" : "?";
+  for (let page = 0, total = 1; page < total && page < maxPages; page++) {
+    const data = await upstream<
+      | T[]
+      | {
+          content?: T[];
+          pagination?: { totalPages?: number };
+          totalPages?: number;
+        }
+    >(`${path}${sep}page=${page}&size=100`, token);
+    if (Array.isArray(data)) return data;
+    items.push(...(data?.content ?? []));
+    total = data?.pagination?.totalPages ?? data?.totalPages ?? 1;
+  }
+  return items;
+}

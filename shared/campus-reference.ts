@@ -127,3 +127,20 @@ export const campusReference: Coordinate[] = [
   [4.6272946, -74.065314],
   [4.6267944, -74.0654342],
 ];
+
+/**
+ * Sede al occidente de la Carrera 7 (calles 39 a 40): Vicerrectoría de
+ * Extensión, Edificio Javeriana y Javesalud. Trazado a partir de los
+ * edificios de OpenStreetMap (ODbL); referencia, no un límite oficial.
+ */
+export const campusWestAnnex: Coordinate[] = [
+  [4.6279, -74.06546],
+  [4.62793, -74.06592],
+  [4.6272, -74.06595],
+  [4.62716, -74.06553],
+];
+
+/** Todas las áreas de la universidad que se dibujan como campus. */
+export const campusAreas: Coordinate[][] = [campusReference, campusWestAnnex];
+/** Todos los vértices, útil para encuadrar el mapa. */
+export const campusAllPoints: Coordinate[] = campusAreas.flat();

@@ -1,5 +1,6 @@
 import { registerSocialRoutes } from "./social";
 import { registerAchievementRoutes } from "./achievements";
+import { registerGamificationRoutes } from "./gamification";
 import express, {
   type Request,
   type Response,
@@ -16,7 +17,7 @@ import {
   userPatchSchema,
 } from "../shared/validation";
 import type { User, Page, Species, Specimen } from "../shared/types";
-import { HttpError, type Upstream } from "./upstream";
+import { HttpError, collectPages, type Upstream } from "./upstream";
 
 interface Session {
   token: string;
@@ -219,6 +220,7 @@ export function createApp({
   });
   registerSocialRoutes(app, authenticate, upstream);
   registerAchievementRoutes(app, authenticate, upstream);
+  registerGamificationRoutes(app, authenticate, upstream);
   app.get("/admin-api/capabilities", async (req, res) => {
     await authenticate(req, res);
     res.json({
@@ -270,6 +272,38 @@ export function createApp({
     }
     return items;
   }
+  // Todo lo que pinta el mapa general del campus en una sola respuesta.
+  app.get("/admin-api/campus/overview", async (req, res) => {
+    const session = await authenticate(req, res);
+    const [specimens, species, pois, sightings] = await Promise.all([
+      all<Specimen>("specimens", session.token),
+      all<Species>("species", session.token),
+      collectPages<unknown>(upstream, "/pois", session.token).catch(() => []),
+      collectPages<{
+        id: string;
+        latitude: number | null;
+        longitude: number | null;
+        checked: boolean;
+        observationType: string | null;
+        speciesCommonName: string | null;
+        imageUrl: string | null;
+        createdAt: string;
+      }>(upstream, "/observations/admin", session.token, 10).catch(() => []),
+    ]);
+    res.json({
+      specimens,
+      species,
+      pois,
+      // Solo observaciones de fauna u hongos identificadas y con ubicación.
+      sightings: sightings.filter(
+        (o) =>
+          o.checked &&
+          o.latitude != null &&
+          o.longitude != null &&
+          (o.observationType === "ANIMAL" || o.observationType === "FUNGI"),
+      ),
+    });
+  });
   app.get("/admin-api/resources/:resource", async (req, res) => {
     const session = await authenticate(req, res),
       resource = z
@@ -293,7 +327,15 @@ export function createApp({
     // sin el género, que el administrador no necesita consultar.
     const withState = async (list: unknown[]) => {
       if (resource !== "users") return list;
-      let bans: { userId: string; status: string; expiresAt: string | null }[];
+      let bans: {
+        id: string;
+        userId: string;
+        status: string;
+        banType: string;
+        reason: string;
+        expiresAt: string | null;
+        createdAt: string;
+      }[];
       try {
         bans = await all("bans", session.token);
       } catch {
@@ -301,19 +343,40 @@ export function createApp({
         return (list as User[]).map(({ gender: _gender, ...u }) => u);
       }
       const now = Date.now();
-      const suspended = new Set(
-        bans
-          .filter(
-            (b) =>
-              b.status === "ACTIVE" &&
-              (!b.expiresAt || Date.parse(b.expiresAt) > now),
-          )
-          .map((b) => b.userId),
-      );
-      return (list as User[]).map(({ gender: _gender, ...u }) => ({
-        ...u,
-        status: suspended.has(u.id) ? "SUSPENDED" : "ACTIVE",
-      }));
+      const active = new Map<string, typeof bans>();
+      for (const b of bans)
+        if (
+          b.status === "ACTIVE" &&
+          (!b.expiresAt || Date.parse(b.expiresAt) > now)
+        )
+          active.set(b.userId, [...(active.get(b.userId) ?? []), b]);
+      return (list as User[]).map(({ gender: _gender, ...u }) => {
+        const own = active.get(u.id) ?? [];
+        // La suspensión vigente más larga es la que define el estado.
+        const ban = [...own].sort((a, b) =>
+          !a.expiresAt
+            ? -1
+            : !b.expiresAt
+              ? 1
+              : b.expiresAt.localeCompare(a.expiresAt),
+        )[0];
+        return {
+          ...u,
+          status: ban ? "SUSPENDED" : "ACTIVE",
+          ...(ban
+            ? {
+                ban: {
+                  id: ban.id,
+                  ids: own.map((b) => b.id),
+                  reason: ban.reason,
+                  banType: ban.banType,
+                  expiresAt: ban.expiresAt,
+                  createdAt: ban.createdAt,
+                },
+              }
+            : {}),
+        };
+      });
     };
     if (!q.q && !q.family && !q.speciesId && !q.role && !q.state && !q.health) {
       const page = await upstream<Page<unknown>>(
