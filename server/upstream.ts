@@ -20,6 +20,44 @@ export type Upstream = <T>(
   method?: string,
   body?: unknown,
 ) => Promise<T>;
+/** Claves que nunca se imprimen en los registros de depuración. */
+const secret = /pass(word)?|token|secret|authorization|cookie/i;
+function redact(value: unknown, depth = 0): unknown {
+  if (depth > 6 || value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map((v) => redact(v, depth + 1));
+  return Object.fromEntries(
+    Object.entries(value).map(([k, v]) => [
+      k,
+      secret.test(k) ? "[oculto]" : redact(v, depth + 1),
+    ]),
+  );
+}
+/**
+ * Depuración: imprime en la terminal cada respuesta del backend. Activo por
+ * defecto fuera de producción; DEBUG_BACKEND=0 lo apaga y DEBUG_BACKEND=1 lo
+ * activa también en producción.
+ */
+const debugBackend =
+  process.env.DEBUG_BACKEND === "1" ||
+  (!["production", "test"].includes(process.env.NODE_ENV ?? "") &&
+    process.env.DEBUG_BACKEND !== "0");
+function logExchange(
+  method: string,
+  path: string,
+  status: number | string,
+  ms: number,
+  request: unknown,
+  response: unknown,
+) {
+  if (!debugBackend) return;
+  const text = JSON.stringify(redact(response), null, 2) ?? "(sin cuerpo)";
+  console.log(
+    `\n[backend] ${method} ${path} → ${status} (${ms} ms)` +
+      (request ? `\n  envío: ${JSON.stringify(redact(request))}` : "") +
+      `\n  respuesta: ${text.length > 4000 ? text.slice(0, 4000) + "\n  … (recortado)" : text}`,
+  );
+}
+
 export function createUpstream(base: string): Upstream {
   const url = new URL(base);
   if (
@@ -34,6 +72,7 @@ export function createUpstream(base: string): Upstream {
     body?: unknown,
   ): Promise<T> => {
     let response: Response;
+    const started = Date.now();
     try {
       response = await fetch(base.replace(/\/$/, "") + path, {
         method,
@@ -46,7 +85,15 @@ export function createUpstream(base: string): Upstream {
         body: body ? JSON.stringify(body) : undefined,
         signal: AbortSignal.timeout(15000),
       });
-    } catch {
+    } catch (e) {
+      logExchange(
+        method,
+        path,
+        "sin conexión",
+        Date.now() - started,
+        body,
+        String(e),
+      );
       throw new HttpError(
         502,
         "No pudimos conectar con BioJaveriana. Intenta de nuevo.",
@@ -56,6 +103,14 @@ export function createUpstream(base: string): Upstream {
       string,
       unknown
     > | null;
+    logExchange(
+      method,
+      path,
+      response.status,
+      Date.now() - started,
+      body,
+      data,
+    );
     if (!response.ok)
       throw new HttpError(
         response.status,

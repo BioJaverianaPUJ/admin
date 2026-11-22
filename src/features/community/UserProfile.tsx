@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ImageOff, Mail, ShieldAlert, UserRound } from "lucide-react";
+import { AtSign, ImageOff, Mail, ShieldAlert, UserRound } from "lucide-react";
 import type { Page, User } from "../../../shared/types";
 import { api, errorMessage } from "../../lib/api";
 import { Badge, ErrorBox, Modal } from "../../components/ui";
@@ -56,7 +56,7 @@ const banStatus: Record<string, string> = {
 /** "3 d 4 h", "5 h 12 min", "8 min"… tiempo que falta para una fecha. */
 export function remaining(iso: string, now = Date.now()) {
   const ms = Date.parse(iso) - now;
-  if (!Number.isFinite(ms) || ms <= 0) return "vencida";
+  if (!Number.isFinite(ms) || ms <= 0) return "0 min";
   const min = Math.ceil(ms / 60000),
     d = Math.floor(min / 1440),
     h = Math.floor((min % 1440) / 60),
@@ -69,6 +69,8 @@ export function remaining(iso: string, now = Date.now()) {
 /** Texto corto de la suspensión vigente: "Hasta 24 nov., 3:00 p. m. · quedan 2 d 4 h". */
 export function banSummary(ban: Pick<ActiveBan, "expiresAt">) {
   if (!ban.expiresAt) return "Indefinida";
+  if (Date.parse(ban.expiresAt) <= Date.now())
+    return `Terminó el ${formatDate(ban.expiresAt)}`;
   return `Hasta ${formatDate(ban.expiresAt)} · quedan ${remaining(ban.expiresAt)}`;
 }
 
@@ -136,7 +138,13 @@ export function UserProfile({
       b.status === "ACTIVE" &&
       (!b.expiresAt || Date.parse(b.expiresAt) > Date.now()),
   );
-  const current = active[0] ?? user.ban;
+  // El listado puede traer una suspensión que ya venció mientras se miraba.
+  const listed =
+    user.ban &&
+    (!user.ban.expiresAt || Date.parse(user.ban.expiresAt) > Date.now())
+      ? user.ban
+      : undefined;
+  const current = bans ? active[0] : listed;
   const pending = (received ?? []).filter((r) => r.status === "PENDING").length;
 
   return (
@@ -170,7 +178,10 @@ export function UserProfile({
               {full.firstName} {full.lastName}
             </h3>
             <p>
-              @{full.username}
+              <span className="profile-handle">
+                <AtSign size={13} />
+                {full.username}
+              </span>
               <span className="profile-mail">
                 <Mail size={13} /> {full.email}
               </span>
