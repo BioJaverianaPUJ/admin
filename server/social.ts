@@ -39,6 +39,16 @@ export function registerSocialRoutes(
       await upstream(`${routes[resource]}?${pagination(req.query)}`, s.token),
     );
   });
+  // Denuncias recibidas por una cuenta (RF-29: asociadas al perfil del autor).
+  app.get("/admin-api/social/reports/by-user/:id", async (req, res) => {
+    const s = await authenticate(req, res);
+    res.json(
+      await upstream(
+        `/reports/by-reported-user?reportedUserId=${uuid(req.params.id)}&${pagination(req.query)}`,
+        s.token,
+      ),
+    );
+  });
   app.get("/admin-api/social/:resource/:id", async (req, res) => {
     const s = await authenticate(req, res),
       resource = z
@@ -105,12 +115,54 @@ export function registerSocialRoutes(
     );
   });
   app.post("/admin-api/social/pois", async (req, res) => {
-    const s = await authenticate(req, res);
-    res
-      .status(201)
-      .json(
-        await upstream("/pois", s.token, "POST", poiSchema.parse(req.body)),
-      );
+    const s = await authenticate(req, res),
+      body = poiSchema.parse(req.body);
+    try {
+      res.status(201).json(await upstream("/pois", s.token, "POST", body));
+    } catch (e) {
+      const ring = body.polygonCoordinates ?? [];
+      if (
+        !(e instanceof HttpError) ||
+        e.status !== 400 ||
+        body.geometryType !== "POLYGON" ||
+        ring.length < 4
+      )
+        throw e;
+      // Solución temporal: PoiService.validateGeometry compara los Double del
+      // primer y último vértice con != (referencias, no valores) y rechaza
+      // todo polígono cerrado. El polígono ya se validó aquí (simple, cerrado
+      // y dentro del campus), así que se crea como punto y se convierte en
+      // polígono con la edición, que no tiene esa comparación. Retirar cuando
+      // el backend use equals()/Double.compare.
+      const vertices = ring.slice(0, -1);
+      const center = {
+        centerLatitude:
+          vertices.reduce((a, v) => a + v.latitude, 0) / vertices.length,
+        centerLongitude:
+          vertices.reduce((a, v) => a + v.longitude, 0) / vertices.length,
+      };
+      const { polygonCoordinates, ...rest } = body;
+      const created = await upstream<{ id: string }>("/pois", s.token, "POST", {
+        ...rest,
+        geometryType: "POINT",
+        ...center,
+        radiusMeters: 1,
+      });
+      try {
+        const { geometryType: _type, ...update } = body;
+        res.status(201).json(
+          await upstream(`/pois/${uuid(created.id)}`, s.token, "PUT", {
+            ...update,
+            polygonCoordinates,
+          }),
+        );
+      } catch (inner) {
+        await upstream(`/pois/${uuid(created.id)}`, s.token, "DELETE").catch(
+          () => undefined,
+        );
+        throw inner;
+      }
+    }
   });
   app.put("/admin-api/social/pois/:id", async (req, res) => {
     const s = await authenticate(req, res),

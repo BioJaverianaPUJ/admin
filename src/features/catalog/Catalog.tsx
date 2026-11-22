@@ -1,5 +1,6 @@
 import { ObservationReviews } from "./ObservationReviews";
-import { useEffect, useState, type FormEvent } from "react";
+import { ErrorBoundary } from "../../components/ErrorBoundary";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   Plus,
   Search,
@@ -9,7 +10,9 @@ import {
   Leaf,
   TreePine,
   ClipboardCheck,
-  ArrowUpRight,
+  X,
+  Layers,
+  HeartPulse,
 } from "lucide-react";
 import type { Species, Specimen } from "../../../shared/types";
 import { speciesSchema, specimenSchema } from "../../../shared/validation";
@@ -30,6 +33,32 @@ import {
 import { CampusMap } from "../../components/CampusMap";
 import { SpeciesBadge } from "../../components/SpeciesBadge";
 import { speciesGroup } from "../../lib/speciesGroups";
+interface CatalogStats {
+  totalSpecimens: number;
+  health: Record<string, number>;
+  bySpecies: Record<string, { total: number; health: Record<string, number> }>;
+}
+const healthTone: Record<string, string> = {
+  WELL: "#9ccb72",
+  FAIR: "#e3c46b",
+  POOR: "#f0a58f",
+  DEAD: "#8a948f",
+  UNKNOWN: "#5c7a70",
+};
+type SpeciesSort = "common" | "scientific" | "family" | "specimens" | "density";
+const sortLabels: Record<SpeciesSort, string> = {
+  common: "Nombre común (A-Z)",
+  scientific: "Nombre científico (A-Z)",
+  family: "Familia",
+  specimens: "Más ejemplares en el campus",
+  density: "Mayor densidad de madera",
+};
+const PAGE = 12;
+const fold = (v: string | null | undefined) =>
+  (v ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
 const health: Record<string, string> = {
   WELL: "Bueno",
   FAIR: "Regular",
@@ -44,10 +73,18 @@ export function Catalog() {
     [family, setFamily] = useState(""),
     [speciesId, setSpeciesId] = useState(""),
     [options, setOptions] = useState<Species[]>([]),
-    [optionsError, setOptionsError] = useState("");
+    [optionsError, setOptionsError] = useState(""),
+    [group, setGroup] = useState(""),
+    [sort, setSort] = useState<SpeciesSort>("common"),
+    [presence, setPresence] = useState<"" | "with" | "without">(""),
+    [healthFilter, setHealthFilter] = useState(""),
+    [speciesPage, setSpeciesPage] = useState(0),
+    [stats, setStats] = useState<CatalogStats | null>(null);
   const r = useResource<Species | Specimen>(
     tab === "reviews" ? "species" : tab,
-    { q, family, speciesId },
+    tab === "specimens"
+      ? { q, family, speciesId, health: healthFilter }
+      : { q, family, speciesId },
   );
   const [edit, setEdit] = useState<Species | Specimen | "new" | null>(null),
     [view, setView] = useState<Species | Specimen | null>(null),
@@ -62,8 +99,84 @@ export function Catalog() {
       .catch((e) => {
         if (!c.signal.aborted) setOptionsError(errorMessage(e));
       });
+    api<CatalogStats>("/catalog/stats", { signal: c.signal })
+      .then((v) =>
+        // Solo se usa si trae la forma esperada; si no, el catálogo sigue.
+        setStats(
+          v &&
+            typeof v.bySpecies === "object" &&
+            typeof v.totalSpecimens === "number"
+            ? { ...v, health: v.health ?? {} }
+            : null,
+        ),
+      )
+      .catch(() => {
+        if (!c.signal.aborted) setStats(null);
+      });
     return () => c.abort();
   }, [r.data]);
+  // Las especies son pocas: se filtran y ordenan aquí para combinar filtros.
+  const count = (id: string) => stats?.bySpecies[id]?.total ?? 0;
+  const groupCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const sp of options) {
+      const label = speciesGroup(sp).label;
+      m.set(label, (m.get(label) ?? 0) + 1);
+    }
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  }, [options]);
+  const speciesRows = useMemo(() => {
+    const needle = fold(q.trim());
+    const list = options.filter(
+      (sp) =>
+        (!needle ||
+          [sp.commonName, sp.scientificName, sp.family].some((v) =>
+            fold(v).includes(needle),
+          )) &&
+        (!family || sp.family === family) &&
+        (!group || speciesGroup(sp).label === group) &&
+        (!presence ||
+          (presence === "with" ? count(sp.id) > 0 : count(sp.id) === 0)),
+    );
+    const by = (a: string, b: string) => a.localeCompare(b, "es");
+    return list.sort((a, b) =>
+      sort === "scientific"
+        ? by(a.scientificName, b.scientificName)
+        : sort === "family"
+          ? by(a.family, b.family) || by(a.commonName, b.commonName)
+          : sort === "specimens"
+            ? count(b.id) - count(a.id) || by(a.commonName, b.commonName)
+            : sort === "density"
+              ? (b.woodDensity ?? -1) - (a.woodDensity ?? -1)
+              : by(a.commonName, b.commonName),
+    );
+  }, [options, q, family, group, presence, sort, stats]);
+  useEffect(() => setSpeciesPage(0), [q, family, group, presence, sort]);
+  const speciesPages = Math.ceil(speciesRows.length / PAGE);
+  const filtering = !!(
+    q ||
+    family ||
+    speciesId ||
+    group ||
+    presence ||
+    healthFilter
+  );
+  const clearFilters = () => {
+    setQ("");
+    setFamily("");
+    setSpeciesId("");
+    setGroup("");
+    setPresence("");
+    setHealthFilter("");
+  };
+  const rows: (Species | Specimen)[] =
+    tab === "species"
+      ? speciesRows.slice(speciesPage * PAGE, (speciesPage + 1) * PAGE)
+      : (r.data?.content ?? []);
+  const families = new Set(options.map((sp) => sp.family)).size;
+  const healthy = stats?.totalSpecimens
+    ? Math.round(((stats.health.WELL ?? 0) / stats.totalSpecimens) * 100)
+    : null;
   const name = (row: Species | Specimen) =>
     "commonName" in row
       ? row.commonName
@@ -86,9 +199,7 @@ export function Catalog() {
   }
   function changeTab(t: typeof tab) {
     setTab(t);
-    setQ("");
-    setFamily("");
-    setSpeciesId("");
+    clearFilters();
     setSuccess("");
   }
   return (
@@ -107,28 +218,44 @@ export function Catalog() {
           )
         }
       />
-      <div className="catalog-summary">
-        <div className="glass summary-card">
+      <div className="catalog-stats">
+        <div className="glass stat-card">
           <div className="icon-tile">
             <Leaf />
           </div>
           <div>
-            <span>Inventario oficial</span>
+            <span>Especies</span>
+            <strong>{options.length || "—"}</strong>
+          </div>
+        </div>
+        <div className="glass stat-card">
+          <div className="icon-tile">
+            <Layers />
+          </div>
+          <div>
+            <span>Familias</span>
+            <strong>{families || "—"}</strong>
+          </div>
+        </div>
+        <div className="glass stat-card">
+          <div className="icon-tile">
+            <TreePine />
+          </div>
+          <div>
+            <span>Especímenes en el campus</span>
             <strong>
-              {r.data && !r.error
-                ? r.data.pagination.totalElements.toLocaleString("es-CO")
-                : "—"}{" "}
-              <small>
-                {tab === "specimens" ? "especímenes" : "especies"}
-                {q || family || speciesId ? " filtrados" : ""}
-              </small>
+              {stats ? stats.totalSpecimens.toLocaleString("es-CO") : "—"}
             </strong>
           </div>
         </div>
-        <div className="glass summary-note">
-          <span className="eyebrow">UN CAMPUS VIVO</span>
-          <p>Cada registro ayuda a conocer y proteger lo que nos rodea.</p>
-          <ArrowUpRight />
+        <div className="glass stat-card">
+          <div className="icon-tile">
+            <HeartPulse />
+          </div>
+          <div>
+            <span>En buen estado</span>
+            <strong>{healthy === null ? "—" : `${healthy} %`}</strong>
+          </div>
         </div>
       </div>
       <div className="tabs" aria-label="Categorías del catálogo">
@@ -160,7 +287,9 @@ export function Catalog() {
         </div>
       )}
       {tab === "reviews" ? (
-        <ObservationReviews />
+        <ErrorBoundary>
+          <ObservationReviews />
+        </ErrorBoundary>
       ) : (
         <section className="glass data-panel">
           <div className="panel-title">
@@ -194,6 +323,47 @@ export function Catalog() {
                 <option key={f}>{f}</option>
               ))}
             </select>
+            {tab === "species" && (
+              <>
+                <select
+                  aria-label="Filtrar por presencia en el campus"
+                  value={presence}
+                  onChange={(e) =>
+                    setPresence(e.target.value as "" | "with" | "without")
+                  }
+                >
+                  <option value="">Con o sin ejemplares</option>
+                  <option value="with">Con ejemplares en el campus</option>
+                  <option value="without">Sin ejemplares registrados</option>
+                </select>
+                <select
+                  aria-label="Ordenar especies"
+                  value={sort}
+                  onChange={(e) => setSort(e.target.value as SpeciesSort)}
+                >
+                  {Object.entries(sortLabels).map(([v, label]) => (
+                    <option key={v} value={v}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+            {tab === "specimens" && (
+              <select
+                aria-label="Filtrar por estado de salud"
+                value={healthFilter}
+                onChange={(e) => setHealthFilter(e.target.value)}
+              >
+                <option value="">Cualquier estado</option>
+                {Object.entries(health).map(([v, label]) => (
+                  <option key={v} value={v}>
+                    {label}
+                  </option>
+                ))}
+                <option value="UNKNOWN">Sin dato</option>
+              </select>
+            )}
             {tab === "specimens" && (
               <select
                 aria-label="Filtrar por especie"
@@ -209,22 +379,63 @@ export function Catalog() {
               </select>
             )}
           </div>
+          {tab === "species" && groupCounts.length > 1 && (
+            <div className="group-chips" aria-label="Filtrar por grupo">
+              <button
+                className={group === "" ? "selected" : ""}
+                onClick={() => setGroup("")}
+              >
+                Todos <span>{options.length}</span>
+              </button>
+              {groupCounts.map(([label, n]) => {
+                const sample = options.find(
+                  (sp) => speciesGroup(sp).label === label,
+                );
+                return (
+                  <button
+                    key={label}
+                    className={group === label ? "selected" : ""}
+                    aria-pressed={group === label}
+                    onClick={() => setGroup(group === label ? "" : label)}
+                  >
+                    <SpeciesBadge row={sample} size={22} />
+                    {label} <span>{n}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {filtering && (
+            <div className="filter-summary">
+              <span>
+                {tab === "species"
+                  ? `${speciesRows.length} de ${options.length} especies`
+                  : `${r.data?.pagination.totalElements ?? 0} especímenes`}
+              </span>
+              <button className="link-button" onClick={clearFilters}>
+                <X size={14} /> Limpiar filtros
+              </button>
+            </div>
+          )}
           {optionsError && (
             <Notice>
               No pudimos cargar las opciones de especies: {optionsError}
             </Notice>
           )}
-          {r.busy ? (
+          {tab === "specimens" && r.busy ? (
             <Loading />
-          ) : r.error ? (
+          ) : tab === "species" && !options.length && !optionsError ? (
+            <Loading />
+          ) : tab === "specimens" && r.error ? (
             <ErrorBox message={r.error} retry={r.reload} />
-          ) : r.data?.content.length ? (
+          ) : rows.length ? (
             <div className="table-scroll">
               <table className="catalog-table">
                 <thead>
                   <tr>
                     <th>{tab === "species" ? "Especie" : "Espécimen"}</th>
                     <th>{tab === "species" ? "Familia" : "Ubicación"}</th>
+                    {tab === "species" && <th>En el campus</th>}
                     <th>
                       {tab === "species"
                         ? "Densidad (g/cm³)"
@@ -234,7 +445,7 @@ export function Catalog() {
                   </tr>
                 </thead>
                 <tbody>
-                  {r.data.content.map((row) => (
+                  {rows.map((row) => (
                     <tr key={row.id}>
                       <td>
                         <div className="record-name">
@@ -269,6 +480,14 @@ export function Catalog() {
                           `${row.latitude.toFixed(5)}, ${row.longitude.toFixed(5)}`
                         )}
                       </td>
+                      {"family" in row && (
+                        <td>
+                          <SpecimenCount
+                            entry={stats?.bySpecies[row.id]}
+                            loaded={!!stats}
+                          />
+                        </td>
+                      )}
                       <td>
                         {"woodDensity" in row ? (
                           (row.woodDensity ?? "Sin dato")
@@ -314,16 +533,29 @@ export function Catalog() {
           ) : (
             <Empty
               title={
-                q || family || speciesId
+                filtering
                   ? "No encontramos coincidencias"
                   : "El catálogo está listo para crecer"
               }
             >
-              Los registros aparecerán aquí cuando estén disponibles en el
-              servidor.
+              {filtering ? (
+                <button className="link-button" onClick={clearFilters}>
+                  Limpiar filtros
+                </button>
+              ) : (
+                "Los registros aparecerán aquí cuando estén disponibles en el servidor."
+              )}
             </Empty>
           )}
-          {r.data && !r.error && (
+          {tab === "species" && options.length > 0 && (
+            <Pager
+              page={speciesPage}
+              total={speciesPages}
+              count={speciesRows.length}
+              onPage={setSpeciesPage}
+            />
+          )}
+          {tab === "specimens" && r.data && !r.error && (
             <Pager
               page={r.page}
               total={r.data.pagination.totalPages}
@@ -691,4 +923,41 @@ function localDate(iso: string) {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
     .toISOString()
     .slice(0, 16);
+}
+
+/** Número de ejemplares de una especie y su estado de salud en una barra. */
+function SpecimenCount({
+  entry,
+  loaded,
+}: {
+  entry?: { total: number; health: Record<string, number> };
+  loaded: boolean;
+}) {
+  if (!loaded) return <span className="muted-cell">—</span>;
+  if (!entry?.total) return <span className="muted-cell">Sin ejemplares</span>;
+  const order = ["WELL", "FAIR", "POOR", "DEAD", "UNKNOWN"];
+  return (
+    <div className="specimen-count">
+      <strong>{entry.total}</strong>
+      <span
+        className="health-bar"
+        title={order
+          .filter((h) => entry.health[h])
+          .map((h) => `${health[h] ?? "Sin dato"}: ${entry.health[h]}`)
+          .join(" · ")}
+      >
+        {order.map((h) =>
+          entry.health[h] ? (
+            <i
+              key={h}
+              style={{
+                flex: entry.health[h],
+                background: healthTone[h],
+              }}
+            />
+          ) : null,
+        )}
+      </span>
+    </div>
+  );
 }

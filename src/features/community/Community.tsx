@@ -12,7 +12,15 @@ import {
   Modal,
   Confirm,
 } from "../../components/ui";
-import { Moderation } from "./Moderation";
+import { Moderation, splitReason, statuses } from "./Moderation";
+import { formatDate } from "./ContentPreview";
+interface ReceivedReport {
+  id: string;
+  reportType: "POST" | "COMMENT";
+  reason: string;
+  status: keyof typeof statuses;
+  createdAt: string;
+}
 interface Ban {
   id: string;
   reason: string;
@@ -29,8 +37,10 @@ export function Community({ user }: { user: User }) {
   const [tab, setTab] = useState("users"),
     [q, setQ] = useState(""),
     [role, setRole] = useState(""),
+    [state, setState] = useState(""),
     [view, setView] = useState<User | null>(null),
     [bans, setBans] = useState<Ban[]>([]),
+    [received, setReceived] = useState<ReceivedReport[] | null>(null),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState(""),
@@ -43,13 +53,33 @@ export function Community({ user }: { user: User }) {
     [suspend, setSuspend] = useState<User | null>(null),
     [reason, setReason] = useState(""),
     [until, setUntil] = useState("");
-  const r = useResource<User>("users", { q, role });
+  const r = useResource<User & { status?: "ACTIVE" | "SUSPENDED" }>("users", {
+    q,
+    role,
+    state,
+  });
   const protectedUser = (u: User) =>
     u.role === "SUPERADMIN" || u.username === "superadmin" || u.id === user.id;
   async function show(u: User) {
     setError("");
     setView(u);
     setBans([]);
+    setReceived(null);
+    void (async () => {
+      try {
+        const all: ReceivedReport[] = [];
+        for (let p = 0; ; p++) {
+          const r = await api<Page<ReceivedReport>>(
+            `/social/reports/by-user/${u.id}?page=${p}&size=100`,
+          );
+          all.push(...r.content);
+          if (p + 1 >= r.pagination.totalPages) break;
+        }
+        setReceived(all);
+      } catch {
+        setReceived([]);
+      }
+    })();
     try {
       let page = 0;
       const all: Ban[] = [];
@@ -119,7 +149,7 @@ export function Community({ user }: { user: User }) {
               <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Nombre de usuario"
+                placeholder="Usuario o correo"
               />
             </label>
             <label>
@@ -129,6 +159,14 @@ export function Community({ user }: { user: User }) {
                 <option value="USER">Usuario</option>
                 <option value="ADMIN">Administrador</option>
                 <option value="SUPERADMIN">Administrador inicial</option>
+              </select>
+            </label>
+            <label>
+              Estado
+              <select value={state} onChange={(e) => setState(e.target.value)}>
+                <option value="">Todos</option>
+                <option value="ACTIVE">Activa</option>
+                <option value="SUSPENDED">Suspendida</option>
               </select>
             </label>
           </div>
@@ -144,6 +182,7 @@ export function Community({ user }: { user: User }) {
                     <th>Nombre</th>
                     <th>Correo</th>
                     <th>Rol</th>
+                    <th>Estado</th>
                     <th>Acciones</th>
                   </tr>
                 </thead>
@@ -159,6 +198,15 @@ export function Community({ user }: { user: User }) {
                         <Badge tone={u.role === "USER" ? "" : "live"}>
                           {roleLabel[u.role] ?? u.role}
                         </Badge>
+                      </td>
+                      <td>
+                        {u.status === "SUSPENDED" ? (
+                          <Badge tone="danger">Suspendida</Badge>
+                        ) : u.status === "ACTIVE" ? (
+                          <Badge>Activa</Badge>
+                        ) : (
+                          "—"
+                        )}
                       </td>
                       <td>
                         <div className="text-actions">
@@ -278,6 +326,31 @@ export function Community({ user }: { user: User }) {
               </button>
             </div>
           )}
+          <h3>Denuncias recibidas</h3>
+          {received === null ? (
+            <p>Cargando denuncias…</p>
+          ) : received.length === 0 ? (
+            <p>Esta cuenta no tiene denuncias.</p>
+          ) : (
+            <ul className="user-reports">
+              {received.map((d) => (
+                <li key={d.id}>
+                  <span>
+                    <strong>{splitReason(d.reason).reason}</strong>
+                    <small className="cell-note">
+                      {d.reportType === "COMMENT"
+                        ? "Comentario"
+                        : "Publicación"}{" "}
+                      · {formatDate(d.createdAt)}
+                    </small>
+                  </span>
+                  <Badge tone={d.status === "PENDING" ? "warn" : ""}>
+                    {statuses[d.status] ?? d.status}
+                  </Badge>
+                </li>
+              ))}
+            </ul>
+          )}
           <h3>Suspensiones</h3>
           {bans.length === 0 ? (
             <p>No hay suspensiones cargadas.</p>
@@ -285,7 +358,12 @@ export function Community({ user }: { user: User }) {
             bans.map((b) => (
               <article key={b.id}>
                 <p>
-                  {b.reason} · {b.status}{" "}
+                  {b.reason} ·{" "}
+                  {{
+                    ACTIVE: "Activa",
+                    EXPIRED: "Vencida",
+                    CANCELLED: "Cancelada",
+                  }[b.status] ?? b.status}{" "}
                   {b.expiresAt &&
                     `· Hasta ${new Date(b.expiresAt).toLocaleString("es-CO")}`}
                 </p>

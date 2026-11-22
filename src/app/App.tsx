@@ -1,4 +1,5 @@
 import { PointsOfInterest } from "../features/drafts/PointsOfInterest";
+import { Achievements } from "../features/drafts/Achievements";
 import { lazy, Suspense, useEffect, useState } from "react";
 import {
   Leaf,
@@ -14,6 +15,7 @@ import {
 import type { User } from "../../shared/types";
 import { api } from "../lib/api";
 import { Login } from "../features/auth/Login";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 const Catalog = lazy(() =>
   import("../features/catalog/Catalog").then((m) => ({ default: m.Catalog })),
 );
@@ -207,21 +209,24 @@ export function App() {
         </header>
         <main id="main" className="main-content" tabIndex={-1}>
           {notice && <Notice>{notice}</Notice>}
-          <Suspense fallback={<Loading />}>
-            {section === "catalogo" ? (
-              <Catalog />
-            ) : section === "comunidad" ? (
-              <Community user={user} />
-            ) : (
-              <DraftWorkspace
-                key={section + user.id}
-                section={section}
-                userId={user.id}
-              >
-                {section === "zonas" && <PointsOfInterest />}
-              </DraftWorkspace>
-            )}
-          </Suspense>
+          <ErrorBoundary key={section}>
+            <Suspense fallback={<Loading />}>
+              {section === "catalogo" ? (
+                <Catalog />
+              ) : section === "comunidad" ? (
+                <Community user={user} />
+              ) : (
+                <DraftWorkspace
+                  key={section + user.id}
+                  section={section}
+                  userId={user.id}
+                >
+                  {section === "zonas" && <PointsOfInterest />}
+                  {section === "gamificacion" && <Achievements />}
+                </DraftWorkspace>
+              )}
+            </Suspense>
+          </ErrorBoundary>
         </main>
         <footer className="page-footer">
           <span>BioJaveriana · La biodiversidad nos conecta.</span>

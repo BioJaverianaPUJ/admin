@@ -1,4 +1,5 @@
 import { registerSocialRoutes } from "./social";
+import { registerAchievementRoutes } from "./achievements";
 import express, {
   type Request,
   type Response,
@@ -217,6 +218,7 @@ export function createApp({
     res.json({ user: session.user });
   });
   registerSocialRoutes(app, authenticate, upstream);
+  registerAchievementRoutes(app, authenticate, upstream);
   app.get("/admin-api/capabilities", async (req, res) => {
     await authenticate(req, res);
     res.json({
@@ -281,15 +283,45 @@ export function createApp({
         family: z.string().max(120).default(""),
         speciesId: z.string().default(""),
         role: z.enum(["", "USER", "ADMIN", "SUPERADMIN"]).default(""),
+        state: z.enum(["", "ACTIVE", "SUSPENDED"]).default(""),
+        health: z
+          .enum(["", "WELL", "FAIR", "POOR", "DEAD", "UNKNOWN"])
+          .default(""),
       })
       .parse(req.query);
-    if (!q.q && !q.family && !q.speciesId && !q.role)
-      return res.json(
-        await upstream(
-          `/${resource}?page=${q.page}&size=${q.size}`,
-          session.token,
-        ),
+    // RF-55: estado de cada cuenta a partir de sus suspensiones activas, y
+    // sin el género, que el administrador no necesita consultar.
+    const withState = async (list: unknown[]) => {
+      if (resource !== "users") return list;
+      let bans: { userId: string; status: string; expiresAt: string | null }[];
+      try {
+        bans = await all("bans", session.token);
+      } catch {
+        // Sin suspensiones disponibles se listan las cuentas sin estado.
+        return (list as User[]).map(({ gender: _gender, ...u }) => u);
+      }
+      const now = Date.now();
+      const suspended = new Set(
+        bans
+          .filter(
+            (b) =>
+              b.status === "ACTIVE" &&
+              (!b.expiresAt || Date.parse(b.expiresAt) > now),
+          )
+          .map((b) => b.userId),
       );
+      return (list as User[]).map(({ gender: _gender, ...u }) => ({
+        ...u,
+        status: suspended.has(u.id) ? "SUSPENDED" : "ACTIVE",
+      }));
+    };
+    if (!q.q && !q.family && !q.speciesId && !q.role && !q.state && !q.health) {
+      const page = await upstream<Page<unknown>>(
+        `/${resource}?page=${q.page}&size=${q.size}`,
+        session.token,
+      );
+      return res.json({ ...page, content: await withState(page.content) });
+    }
     const rows = await all<Species | Specimen | User>(resource, session.token);
     const species =
       resource === "specimens"
@@ -315,21 +347,43 @@ export function createApp({
         text.includes(q.q.toLocaleLowerCase("es")) &&
         (!q.family || (s?.family ?? r.family) === q.family) &&
         (!q.speciesId || r.speciesId === q.speciesId) &&
-        (!q.role || r.role === q.role)
+        (!q.role || r.role === q.role) &&
+        (!q.health || (r.healthStatus ?? "UNKNOWN") === q.health)
       );
     });
-    const totalPages = Math.ceil(filtered.length / q.size);
+    const stated = (await withState(filtered)).filter(
+      (row) => !q.state || (row as { status?: string }).status === q.state,
+    );
+    const totalPages = Math.ceil(stated.length / q.size);
     res.json({
-      content: filtered.slice(q.page * q.size, (q.page + 1) * q.size),
+      content: stated.slice(q.page * q.size, (q.page + 1) * q.size),
       pagination: {
         page: q.page,
         size: q.size,
-        totalElements: filtered.length,
+        totalElements: stated.length,
         totalPages,
         first: q.page === 0,
         last: q.page >= totalPages - 1,
       },
     });
+  });
+  // Resumen del catálogo: ejemplares por especie y su estado de salud.
+  app.get("/admin-api/catalog/stats", async (req, res) => {
+    const s = await authenticate(req, res);
+    const specimens = await all<Specimen>("specimens", s.token);
+    const bySpecies: Record<
+      string,
+      { total: number; health: Record<string, number> }
+    > = {};
+    const health: Record<string, number> = {};
+    for (const sp of specimens) {
+      const entry = (bySpecies[sp.speciesId] ??= { total: 0, health: {} });
+      const h = sp.healthStatus ?? "UNKNOWN";
+      entry.total++;
+      entry.health[h] = (entry.health[h] ?? 0) + 1;
+      health[h] = (health[h] ?? 0) + 1;
+    }
+    res.json({ totalSpecimens: specimens.length, health, bySpecies });
   });
   app.get("/admin-api/options/species", async (req, res) => {
     const s = await authenticate(req, res);

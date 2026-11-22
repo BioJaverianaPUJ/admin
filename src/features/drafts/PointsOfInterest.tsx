@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import type { Coordinate, Page } from "../../../shared/types";
-import { poiPoints, type Poi } from "../../../shared/poi";
+import { poiPoints, zoneTypes, type Poi } from "../../../shared/poi";
 import { api, errorMessage } from "../../lib/api";
 import { CampusMap } from "../../components/CampusMap";
 import {
@@ -60,9 +60,9 @@ export function PointsOfInterest() {
         </div>
       </div>
       <Notice>
-        Estos lugares se guardan en el servidor. El límite de referencia se
-        comprueba antes del envío; el backend todavía debe publicar el perímetro
-        institucional y la asociación con misiones.
+        Las zonas verdes y de interés se guardan en el servidor y aparecen en el
+        mapa de la aplicación móvil. El límite del campus se comprueba antes del
+        envío.
       </Notice>
       {error && <ErrorBox message={error} retry={load} />}{" "}
       {loading ? (
@@ -73,6 +73,7 @@ export function PointsOfInterest() {
             <thead>
               <tr>
                 <th>Nombre</th>
+                <th>Tipo</th>
                 <th>Geometría</th>
                 <th>Visibilidad</th>
                 <th>Estado</th>
@@ -83,6 +84,15 @@ export function PointsOfInterest() {
               {data.content.map((p) => (
                 <tr key={p.id}>
                   <td>{p.name}</td>
+                  <td>
+                    <Badge
+                      tone={
+                        p.type === "GREEN_ZONE" ? "live" : p.type ? "info" : ""
+                      }
+                    >
+                      {p.type ? zoneTypes[p.type] : "Sin tipo"}
+                    </Badge>
+                  </td>
                   <td>
                     {p.geometryType === "POINT" ? "Punto y radio" : "Polígono"}
                   </td>
@@ -175,6 +185,9 @@ function PoiEditor({
     [points, setPoints] = useState<Coordinate[]>(poi ? poiPoints(poi) : []),
     [radius, setRadius] = useState(poi?.radiusMeters ?? 20),
     [visibility, setVisibility] = useState(poi?.visibility ?? "PUBLIC"),
+    [zone, setZone] = useState<"GREEN_ZONE" | "INTEREST_ZONE">(
+      poi?.type ?? "INTEREST_ZONE",
+    ),
     [active, setActive] = useState(poi?.active ?? true),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
@@ -196,6 +209,7 @@ function PoiEditor({
           name,
           description,
           geometryType: type,
+          type: zone,
           visibility,
           active,
           ...(type === "POINT"
@@ -229,6 +243,18 @@ function PoiEditor({
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
+          </label>
+          <label>
+            Tipo de zona
+            <select
+              value={zone}
+              onChange={(e) =>
+                setZone(e.target.value as "GREEN_ZONE" | "INTEREST_ZONE")
+              }
+            >
+              <option value="INTEREST_ZONE">Zona de interés</option>
+              <option value="GREEN_ZONE">Zona verde</option>
+            </select>
           </label>
           <label>
             Visibilidad

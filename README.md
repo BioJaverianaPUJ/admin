@@ -1,4 +1,4 @@
-> Revisión más reciente: [backend y puntos de interés — 16 de noviembre](docs/REVISION_BACKEND_2026_11_16.md).
+> Revisión más reciente: [integración del backend — 22 de noviembre](docs/INTEGRACION_BACKEND_2026_11_22.md).
 
 > **Versión actual integrada en main:** [funciones, tecnologías, pruebas y pendientes](docs/VERSION_ACTUAL.md). Autor: Brayan Fajardo.
 

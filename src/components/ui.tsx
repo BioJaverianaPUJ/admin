@@ -103,8 +103,8 @@ export function Pager({
   return (
     <footer className="pager">
       <span>
-        {count.toLocaleString("es-CO")} registros · Página{" "}
-        {total ? page + 1 : 0} de {total}
+        {(count ?? 0).toLocaleString("es-CO")} registros · Página{" "}
+        {total ? page + 1 : 0} de {total ?? 0}
       </span>
       <div>
         <button

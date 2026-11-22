@@ -51,7 +51,8 @@ async function waitForServer() {
 await mkdir(join(out, "sdd"), { recursive: true });
 await waitForServer();
 const email = process.env.BIO_EMAIL || (await ask("Correo de administrador: "));
-const password = process.env.BIO_PASSWORD || (await ask("Contraseña: ", true));
+const password =
+  process.env.BIO_PASSWORD || (await ask("Contraseña: ", true));
 
 let browser;
 try {
@@ -78,23 +79,14 @@ const done = [],
 const pause = (ms = 1200) => page.waitForTimeout(ms);
 // Código de cada captura en el SDD (sección 3.4): se guarda una copia con ese nombre.
 const codes = {
-  "01-login": "W01",
-  "02-catalogo-especies": "W02",
-  "05-catalogo-especimenes": "W03",
-  "07-catalogo-solicitudes-revision": "W04",
-  "03-catalogo-nueva-especie": "W05",
-  "04-catalogo-detalle-especie": "W06",
-  "08-zonas-puntos-de-interes": "W07",
-  "09-zonas-nuevo-punto-de-interes": "W09",
-  "10-zonas-vista-3d": "W10",
-  "11-zonas-verdes-nuevo-borrador": "W11",
-  "14-gamificacion-misiones": "W12",
-  "15-gamificacion-nueva-mision": "W13",
-  "18-comunidad-usuarios": "W14",
-  "19-comunidad-perfil-de-usuario": "W16",
-  "19b-comunidad-suspender": "W17",
-  "20-comunidad-publicaciones": "W18",
-  "21-comunidad-denuncias": "W19",
+  "01-login": "W01", "02-catalogo-especies": "W02", "05-catalogo-especimenes": "W03",
+  "07-catalogo-solicitudes-revision": "W04", "03-catalogo-nueva-especie": "W05",
+  "04-catalogo-detalle-especie": "W06", "08-zonas-puntos-de-interes": "W07",
+  "09-zonas-nuevo-punto-de-interes": "W09", "10-zonas-vista-3d": "W10",
+  "11-zonas-verdes-nuevo-borrador": "W11", "14-gamificacion-misiones": "W12",
+  "15-gamificacion-nueva-mision": "W13", "18-comunidad-usuarios": "W14",
+  "19-comunidad-perfil-de-usuario": "W16", "19b-comunidad-suspender": "W17",
+  "20-comunidad-publicaciones": "W18", "21-comunidad-denuncias": "W19",
   "21b-comunidad-contenido-denunciado": "W20",
 };
 async function shot(name, full = true) {
@@ -102,14 +94,8 @@ async function shot(name, full = true) {
   if (name !== "01-login" && !(await page.locator(".app-shell").count()))
     throw new Error("la pantalla quedó en blanco");
   await page.screenshot({ path: join(out, `${name}.png`), fullPage: full });
-  for (const code of [
-    codes[name],
-    name === "18-comunidad-usuarios" ? "W15" : null,
-  ].filter(Boolean))
-    await page.screenshot({
-      path: join(out, "sdd", `${code}.png`),
-      fullPage: false,
-    });
+  for (const code of [codes[name], name === "18-comunidad-usuarios" ? "W15" : null].filter(Boolean))
+    await page.screenshot({ path: join(out, "sdd", `${code}.png`), fullPage: false });
   done.push(name);
   console.log(`  ✓ ${name}.png`);
 }
@@ -118,9 +104,7 @@ async function step(name, fn) {
     await fn();
   } catch (e) {
     skipped.push(name);
-    console.log(
-      `  – ${name}: no se pudo (${String(e.message).split("\n")[0]})`,
-    );
+    console.log(`  – ${name}: no se pudo (${String(e.message).split("\n")[0]})`);
   }
 }
 async function closeModal() {
@@ -171,10 +155,7 @@ await step("04-catalogo-detalle-especie", async () => {
   await closeModal();
 });
 await step("05-catalogo-especimenes", async () => {
-  await page
-    .getByRole("button", { name: /Especímenes/ })
-    .first()
-    .click();
+  await page.getByRole("button", { name: /Especímenes/ }).first().click();
   await pause();
   await shot("05-catalogo-especimenes");
 });

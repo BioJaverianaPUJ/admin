@@ -50,6 +50,9 @@ async function mock(page: Page, authenticated = true) {
     } else if (path.endsWith("/logout")) {
       signed = false;
       status = 204;
+    } else if (path.endsWith("/achievements")) {
+      status = 501;
+      body = { message: "Pendiente de despliegue" };
     } else if (path.includes("/social/")) {
       body = {
         content: [],
@@ -262,10 +265,15 @@ test("consulta revisiones reales del contrato y abre el perímetro editable", as
             createdAt: "2026-11-05T12:00:00Z",
           },
         ],
-        page: 0,
-        size: 12,
-        totalElements: 1,
-        totalPages: 1,
+        // Formato real de ObservationListResponse en el backend.
+        pagination: {
+          page: 0,
+          size: 12,
+          totalElements: 1,
+          totalPages: 1,
+          first: true,
+          last: true,
+        },
       },
     }),
   );
@@ -274,10 +282,9 @@ test("consulta revisiones reales del contrato y abre el perímetro editable", as
   await expect(
     page.getByText("Roble de prueba", { exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Ver observación" }).click();
-  await expect(page.getByRole("dialog")).toContainText(
-    "no incluye el estado de verificación oficial",
-  );
+  await expect(page.getByText("1 registros", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "Ver", exact: true }).click();
+  await expect(page.getByRole("dialog")).toContainText("98 %");
   await page.screenshot({
     path: "test-results/observacion-actualizada.png",
     fullPage: true,
@@ -322,6 +329,7 @@ test("puntos de interés se guardan en el servidor y conservan la geometría", a
     .click();
   const dialog = page.getByRole("dialog", { name: "Nuevo punto de interés" });
   await dialog.getByLabel("Nombre *", { exact: true }).fill("Jardín de prueba");
+  await dialog.getByLabel(/^Tipo de zona/).selectOption("GREEN_ZONE");
   await dialog
     .locator(".leaflet-container")
     .click({ position: { x: 200, y: 180 } });
@@ -332,6 +340,7 @@ test("puntos de interés se guardan en el servidor y conservan la geometría", a
   expect(saved[0]).toMatchObject({
     name: "Jardín de prueba",
     geometryType: "POINT",
+    type: "GREEN_ZONE",
     centerLatitude: 4.6286,
     centerLongitude: -74.0637,
   });
@@ -368,8 +377,9 @@ test("denuncias consultan contenido y envían el estado confirmado", async ({
           id: "p1",
           title: "Prueba",
           description: "Contenido reportado",
-          author: { username: "explorador" },
+          author: { id: "u1", username: "explorador" },
           images: [],
+          createdAt: "2026-11-15T11:00:00Z",
         },
       });
       return;
@@ -387,17 +397,39 @@ test("denuncias consultan contenido y envían el estado confirmado", async ({
   });
   await page.goto("/#comunidad");
   await page.getByRole("button", { name: "Denuncias", exact: true }).click();
-  await page.getByRole("button", { name: "Consultar", exact: true }).click();
+  await page.getByRole("button", { name: "Revisar", exact: true }).click();
+  // La denuncia muestra la publicación denunciada tal como en la app.
   await expect(
     page.getByText("Contenido reportado", { exact: true }),
   ).toBeVisible();
-  await page.getByLabel("Estado", { exact: true }).selectOption("UNDER_REVIEW");
+  await expect(page.getByText("Contenido denunciado").first()).toBeVisible();
   await page
-    .getByRole("dialog", { name: "Cambiar denuncia a En revisión" })
+    .getByRole("button", { name: "Marcar en revisión", exact: true })
+    .click();
+  await page
+    .getByRole("dialog", { name: "Marcar la denuncia en revisión" })
     .getByRole("button", { name: "Confirmar cambio", exact: true })
     .click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(
+    page.getByRole("dialog", { name: "Marcar la denuncia en revisión" }),
+  ).toHaveCount(0);
   expect(writes).toEqual(["/admin-api/social/reports/r1/status"]);
+  await page.screenshot({
+    path: "test-results/denuncia-revision.png",
+    fullPage: true,
+  });
+  // Sancionar bloquea el contenido y marca la denuncia como revisada.
+  writes.length = 0;
+  await page.getByRole("button", { name: "Bloquear", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Confirmar cambio", exact: true })
+    .click();
+  await expect
+    .poll(() => writes)
+    .toEqual([
+      "/admin-api/social/posts/p1/toggle-banned",
+      "/admin-api/social/reports/r1/status",
+    ]);
 });
 
 test("un fallo de puntos de interés permite reintentar sin fingir una lista vacía", async ({
@@ -431,4 +463,53 @@ test("un fallo de puntos de interés permite reintentar sin fingir una lista vac
   await expect(
     page.getByText("Aún no hay puntos de interés", { exact: true }),
   ).toBeVisible();
+});
+
+test("logros publicados, creación y estado de despliegue", async ({ page }) => {
+  await mock(page);
+  await page.goto("/#gamificacion");
+  await expect(
+    page.getByText(/El servicio de logros está pendiente/),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Nuevo logro", exact: true }),
+  ).toBeDisabled();
+  let payload: Record<string, unknown> | null = null;
+  await page.route("**/admin-api/achievements", async (route) => {
+    if (route.request().method() === "POST") {
+      payload = route.request().postDataJSON();
+      return route.fulfill({
+        status: 201,
+        json: { id: "logro-test", ...payload },
+      });
+    }
+    return route.fulfill({
+      json: payload ? [{ id: "logro-test", ...payload, active: true }] : [],
+    });
+  });
+  await page.getByRole("button", { name: "Actualizar", exact: true }).click();
+  await page.getByRole("button", { name: "Nuevo logro", exact: true }).click();
+  await page.getByLabel("Identificador único").fill("primera-planta");
+  await page.getByLabel("Nombre", { exact: true }).fill("Mi primera planta");
+  await page
+    .getByLabel("Descripción", { exact: true })
+    .fill("Registra tu primera observación");
+  await page.getByRole("button", { name: "Guardar en el servidor" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Mi primera planta", exact: true }),
+  ).toBeVisible();
+  expect(payload).toMatchObject({
+    metric: "observations",
+    target: 1,
+    xpReward: 10,
+  });
+  await page
+    .getByRole("region", { name: "Logros del servidor" })
+    .getByRole("button", { name: "Editar", exact: true })
+    .click();
+  await expect(page.getByRole("switch", { name: "Activo" })).toBeChecked();
+  await page.screenshot({
+    path: "test-results/logros-editor.png",
+    fullPage: true,
+  });
 });

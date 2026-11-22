@@ -7,6 +7,8 @@ export const poiSchema = z
     name: z.string().trim().min(1).max(200),
     description: z.string().max(2000).default(""),
     geometryType: z.enum(["POINT", "POLYGON"]),
+    // RF-47 y RF-48: zona verde o zona de interés (PoiZoneType del backend).
+    type: z.enum(["GREEN_ZONE", "INTEREST_ZONE"]),
     visibility: z.enum(["PUBLIC", "PRIVATE"]),
     active: z.boolean().optional(),
     polygonCoordinates: z
@@ -66,6 +68,7 @@ export interface Poi {
   name: string;
   description: string;
   geometryType: "POINT" | "POLYGON";
+  type?: "GREEN_ZONE" | "INTEREST_ZONE" | null;
   polygonCoordinatesWkt: string | null;
   centerLatitude: number | null;
   centerLongitude: number | null;
@@ -86,3 +89,7 @@ export function poiPoints(p: Poi): Coordinate[] {
     points.pop();
   return points;
 }
+export const zoneTypes = {
+  GREEN_ZONE: "Zona verde",
+  INTEREST_ZONE: "Zona de interés",
+} as const;

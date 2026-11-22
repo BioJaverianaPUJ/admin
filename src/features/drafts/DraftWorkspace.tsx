@@ -139,9 +139,9 @@ export function DraftWorkspace({
         </div>
       )}
       <Notice>
-        Estas funciones aún no tienen servicio en el backend. Puedes crear,
-        revisar y exportar <strong>borradores locales</strong>; no aparecen en
-        la aplicación móvil ni modifican datos oficiales.
+        En este espacio puedes crear, revisar y exportar{" "}
+        <strong>borradores locales</strong>; no aparecen en la aplicación móvil
+        ni modifican datos oficiales.
       </Notice>
       {section === "zonas" && kind === "boundary" && (
         <section className="glass data-panel perimeter-preview">
@@ -280,7 +280,8 @@ export function DraftWorkspace({
         ) : (
           <Empty title={`Prepara ${labels[kind].toLowerCase()}`}>
             Los borradores que guardes se mostrarán aquí. Podrás editarlos y
-            exportarlos antes de conectar el servicio.
+            exportarlos para revisión. Guardarlos aquí no los publica en el
+            servidor.
           </Empty>
         )}
         <Pager
