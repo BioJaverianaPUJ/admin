@@ -1,7 +1,7 @@
 import { z } from "zod";
 import {
   achievementMetrics,
-  predicateFor,
+  resolvePredicate,
   xpOptions,
   type AchievementMetric,
   type Predicate,
@@ -40,11 +40,17 @@ export const missionSchema = z
     type: z.enum(["DAILY", "WEEKLY", "EVENT"]),
     startTime: z.iso.datetime().optional(),
     endTime: z.iso.datetime().optional(),
-    metric: z.enum(metricKeys),
-    target: z.number().int().positive().max(100000),
+    metric: z.enum(metricKeys).optional(),
+    target: z.number().int().positive().max(100000).optional(),
+    predicate: z.unknown().optional(),
   })
   .strict()
   .superRefine((m, ctx) => {
+    if (m.predicate === undefined && (!m.metric || !m.target))
+      ctx.addIssue({
+        code: "custom",
+        message: "La misión necesita una condición.",
+      });
     if (m.type === "EVENT") {
       if (!m.startTime || !m.endTime)
         ctx.addIssue({
@@ -72,6 +78,7 @@ export const missionUpdateSchema = z
     endTime: z.iso.datetime().optional(),
     metric: z.enum(metricKeys).optional(),
     target: z.number().int().positive().max(100000).optional(),
+    predicate: z.unknown().optional(),
     active: z.boolean().optional(),
   })
   .strict()
@@ -79,15 +86,25 @@ export const missionUpdateSchema = z
     message: "La condición necesita la actividad y la cantidad.",
   });
 
+// Las misiones solo admiten métricas medibles por periodo (backend).
 export function missionPayload(input: unknown) {
-  const { metric, target, ...rest } = missionSchema.parse(input);
-  return { ...rest, predicate: predicateFor(metric, target) };
+  const { metric, target, predicate, ...rest } = missionSchema.parse(input);
+  return {
+    ...rest,
+    predicate: resolvePredicate(
+      { metric, target, predicate },
+      { forMission: true },
+    ),
+  };
 }
 export function missionUpdatePayload(input: unknown) {
-  const { metric, target, ...rest } = missionUpdateSchema.parse(input);
-  return metric && target
-    ? { ...rest, predicate: predicateFor(metric, target) }
-    : rest;
+  const { metric, target, predicate, ...rest } =
+    missionUpdateSchema.parse(input);
+  const tree = resolvePredicate(
+    { metric, target, predicate },
+    { forMission: true },
+  );
+  return tree ? { ...rest, predicate: tree } : rest;
 }
 
 export interface Mission {

@@ -123,7 +123,6 @@ export function CampusOverview() {
       {
         maxZoom: 20,
         maxNativeZoom: 19,
-        className: cartoKey ? "" : "campus-basemap",
         referrerPolicy: "strict-origin-when-cross-origin",
         attribution:
           '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a>' +

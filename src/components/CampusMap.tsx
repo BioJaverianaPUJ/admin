@@ -43,7 +43,6 @@ export function CampusMap({
       : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
     const tiles = L.tileLayer(tileUrl, {
       maxZoom: 19,
-      className: cartoKey ? "" : "campus-basemap",
       referrerPolicy: "strict-origin-when-cross-origin",
       attribution:
         '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a>' +

@@ -147,6 +147,69 @@ describe("Contrato de logros", () => {
       ).status,
     ).toBe(400);
   });
+  it("guarda condiciones compuestas y explica por qué rechaza una inválida", async () => {
+    const s = setup();
+    await s.login();
+    const predicate = {
+      and: [
+        { metric: "observations", op: "gte", value: 5 },
+        {
+          or: [
+            { metric: "posts", op: "gte", value: 2 },
+            { not: { metric: "comments", op: "lt", value: 1 } },
+          ],
+        },
+      ],
+    };
+    const { metric: _m, target: _t, ...rest } = draft;
+    const ok = await s.agent
+      .post("/admin-api/achievements")
+      .set("Origin", origin)
+      .send({ ...rest, predicate });
+    expect(ok.status).toBe(201);
+    expect(s.calls).toHaveBeenLastCalledWith(
+      "/achievements",
+      "private-token",
+      "POST",
+      {
+        slug: draft.slug,
+        name: draft.name,
+        description: draft.description,
+        xpReward: 10,
+        predicate,
+      },
+    );
+    const bad = await s.agent
+      .post("/admin-api/achievements")
+      .set("Origin", origin)
+      .send({ ...rest, predicate: { or: [] } });
+    expect(bad.status).toBe(400);
+    expect(bad.body.message).toContain("incompleta");
+  });
+  it("prueba una condición con una cuenta sin guardarla", async () => {
+    const s = setup();
+    await s.login();
+    const predicate = { metric: "posts", op: "gte", value: 1 };
+    const r = await s.agent
+      .post("/admin-api/achievements/preview")
+      .set("Origin", origin)
+      .send({ userId: id, predicate });
+    expect(r.status).toBe(200);
+    expect(s.calls).toHaveBeenLastCalledWith(
+      "/achievements/preview",
+      "private-token",
+      "POST",
+      { userId: id, predicate },
+    );
+    expect(
+      (
+        await s.agent
+          .post("/admin-api/achievements/preview")
+          .set("Origin", origin)
+          .send({ userId: "x", predicate })
+      ).status,
+    ).toBe(400);
+  });
   it("distingue falta de despliegue de un fallo del servidor", async () => {
     for (const [upstreamStatus, expected] of [
       [404, 501],

@@ -12,7 +12,7 @@ const mission = {
   description: "Visita el campus",
   xpReward: 5,
   type: "DAILY",
-  metric: "poi_visited",
+  metric: "observations",
   target: 1,
 };
 describe("Validaciones del SRS", () => {
@@ -46,7 +46,7 @@ describe("Validaciones del SRS", () => {
       }).success,
     ).toBe(false);
     expect(missionPayload(mission).predicate).toEqual({
-      metric: "poi_visited",
+      metric: "observations",
       op: "gte",
       value: 1,
     });

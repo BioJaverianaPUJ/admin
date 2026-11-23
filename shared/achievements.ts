@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { checkPredicate, describe, type Predicate as Tree } from "./predicate";
 
 /**
  * Métricas que el backend evalúa en las condiciones de los logros
@@ -38,8 +39,10 @@ export const achievementSchema = z.object({
   name: z.string().trim().min(1).max(200),
   description: z.string().trim().max(2000),
   xpReward,
-  metric: z.enum(metricKeys),
-  target,
+  // Condición completa (bloques Y/O/NO) o, por compatibilidad, una sola regla.
+  predicate: z.unknown().optional(),
+  metric: z.enum(metricKeys).optional(),
+  target: target.optional(),
 });
 
 export const achievementUpdateSchema = z
@@ -50,6 +53,7 @@ export const achievementUpdateSchema = z
     active: z.boolean().optional(),
     metric: z.enum(metricKeys).optional(),
     target: target.optional(),
+    predicate: z.unknown().optional(),
   })
   .strict()
   .refine((v) => (v.metric === undefined) === (v.target === undefined), {
@@ -62,26 +66,57 @@ export function predicateFor(metric: AchievementMetric, value: number) {
   return { metric, op: "gte", value };
 }
 
+/** Valida la condición enviada (árbol o regla simple) y la normaliza. */
+export function resolvePredicate(
+  v: { predicate?: unknown; metric?: AchievementMetric; target?: number },
+  options: { forMission?: boolean } = {},
+): Tree | undefined {
+  const raw =
+    v.predicate !== undefined
+      ? v.predicate
+      : v.metric && v.target
+        ? predicateFor(v.metric, v.target)
+        : undefined;
+  if (raw === undefined) return undefined;
+  const checked = checkPredicate(raw, options);
+  if (!checked.ok)
+    throw new z.ZodError([
+      {
+        code: "custom",
+        path: ["predicate"],
+        message: checked.error,
+        input: raw,
+      },
+    ]);
+  return checked.predicate;
+}
+
 export function achievementPayload(input: unknown) {
   const v = achievementSchema.parse(input);
+  const predicate = resolvePredicate(v);
+  if (!predicate)
+    throw new z.ZodError([
+      {
+        code: "custom",
+        path: ["predicate"],
+        message: "El logro necesita una condición.",
+        input: v,
+      },
+    ]);
   return {
     slug: v.slug,
     name: v.name,
     description: v.description,
     xpReward: v.xpReward,
-    predicate: predicateFor(v.metric, v.target),
+    predicate,
   };
 }
 
 export function achievementUpdatePayload(input: unknown) {
-  const {
-    metric,
-    target: value,
-    ...rest
-  } = achievementUpdateSchema.parse(input);
-  return metric && value
-    ? { ...rest, predicate: predicateFor(metric, value) }
-    : rest;
+  const { metric, target, predicate, ...rest } =
+    achievementUpdateSchema.parse(input);
+  const tree = resolvePredicate({ predicate, metric, target });
+  return tree ? { ...rest, predicate: tree } : rest;
 }
 
 export interface Predicate {
@@ -102,20 +137,9 @@ export interface Achievement {
   active: boolean;
 }
 
-const opText: Record<string, string> = {
-  gte: "al menos",
-  gt: "más de",
-  eq: "exactamente",
-  lte: "como máximo",
-  lt: "menos de",
-};
-/** Texto legible de una condición, p. ej. «Publicar en el feed: al menos 5». */
+/** Texto legible de una condición, p. ej. «al menos 5 publicaciones y …». */
 export function describePredicate(p: Predicate | null | undefined): string {
   if (!p) return "Sin condición";
-  if (p.and) return p.and.map(describePredicate).join(" y ");
-  if (p.or) return p.or.map(describePredicate).join(" o ");
-  if (p.not) return `No (${describePredicate(p.not)})`;
-  const label =
-    achievementMetrics[p.metric as AchievementMetric] ?? p.metric ?? "—";
-  return `${label}: ${opText[p.op ?? "gte"] ?? p.op} ${p.value ?? 0}`;
+  const text = describe(p as Tree);
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }

@@ -78,12 +78,6 @@ function style(): StyleSpecification {
         id: "base",
         type: "raster",
         source: "base",
-        paint: {
-          "raster-saturation": -0.75,
-          "raster-brightness-max": 0.78,
-          "raster-brightness-min": 0.12,
-          "raster-hue-rotate": 20,
-        },
       },
       {
         id: "campus-fill",

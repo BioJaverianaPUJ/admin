@@ -562,10 +562,13 @@ export function createApp({
     res.status(404).json({ message: "Esta operación no está disponible." }),
   );
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-    if (err instanceof z.ZodError)
-      return res
-        .status(400)
-        .json({ message: "Revisa los campos obligatorios y sus valores." });
+    if (err instanceof z.ZodError) {
+      // Las validaciones propias (p. ej. de la condición) traen su mensaje.
+      const custom = err.issues.find((i) => i.code === "custom")?.message;
+      return res.status(400).json({
+        message: custom ?? "Revisa los campos obligatorios y sus valores.",
+      });
+    }
     if (err instanceof HttpError)
       return res.status(err.status).json({ message: err.message });
     res

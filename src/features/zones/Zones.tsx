@@ -13,9 +13,11 @@ export function Zones() {
         accent="campus."
         description="Mira la biodiversidad del campus como en la app y administra las zonas verdes y de interés directamente en el servidor."
       />
-      <CampusOverview />
-      <PointsOfInterest />
-      <Campus3DPanel />
+      <div className="zones-stack">
+        <CampusOverview />
+        <PointsOfInterest />
+        <Campus3DPanel />
+      </div>
     </>
   );
 }

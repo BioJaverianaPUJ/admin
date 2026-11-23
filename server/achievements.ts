@@ -5,6 +5,7 @@ import {
   achievementPayload,
   achievementUpdatePayload,
 } from "../shared/achievements";
+import { checkPredicate } from "../shared/predicate";
 import { HttpError, collectPages, type Upstream } from "./upstream";
 
 export function registerAchievementRoutes(
@@ -62,6 +63,22 @@ export function registerAchievementRoutes(
           achievementPayload(req.body),
         ),
       );
+  });
+  // Prueba una condición contra una cuenta real sin guardar nada.
+  app.post("/admin-api/achievements/preview", async (req, res) => {
+    const s = await authenticate(req, res);
+    const body = z
+      .object({ userId: z.uuid(), predicate: z.unknown() })
+      .strict()
+      .parse(req.body);
+    const checked = checkPredicate(body.predicate);
+    if (!checked.ok) throw new HttpError(400, checked.error);
+    res.json(
+      await forward("/achievements/preview", s.token, "POST", {
+        userId: body.userId,
+        predicate: checked.predicate,
+      }),
+    );
   });
   app.put("/admin-api/achievements/:id", async (req, res) => {
     const s = await authenticate(req, res);

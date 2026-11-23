@@ -9,17 +9,14 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
-import {
-  achievementMetrics,
-  describePredicate,
-  xpOptions,
-  type AchievementMetric,
-} from "../../../shared/achievements";
+import { describePredicate, xpOptions } from "../../../shared/achievements";
 import {
   missionTypes,
   type Mission,
   type MissionType,
 } from "../../../shared/gamification";
+import type { Predicate } from "../../../shared/predicate";
+import { PredicateBuilder } from "./PredicateBuilder";
 import { api, errorMessage } from "../../lib/api";
 import {
   Badge,
@@ -75,6 +72,10 @@ export function Missions() {
     [busy, setBusy] = useState(false),
     [formError, setFormError] = useState(""),
     [removing, setRemoving] = useState<Mission | null>(null);
+  const [condition, setCondition] = useState<{
+    predicate?: Predicate;
+    error?: string;
+  }>({});
 
   useEffect(() => {
     const controller = new AbortController();
@@ -111,6 +112,10 @@ export function Missions() {
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy || edit === null) return;
+    if (!condition.predicate) {
+      setFormError(condition.error ?? "Define la condición antes de guardar.");
+      return;
+    }
     const data = new FormData(event.currentTarget);
     const kind = edit === "new" ? type : edit.type;
     const start = String(data.get("startTime") ?? ""),
@@ -126,12 +131,7 @@ export function Missions() {
       name: String(data.get("name")),
       description: String(data.get("description") ?? ""),
       xpReward: Number(data.get("xpReward")),
-      ...(data.has("metric")
-        ? {
-            metric: String(data.get("metric")),
-            target: Number(data.get("target")),
-          }
-        : {}),
+      predicate: condition.predicate,
       ...dates,
     };
     setBusy(true);
@@ -155,7 +155,6 @@ export function Missions() {
   }
 
   const current = edit && edit !== "new" ? edit : null;
-  const simple = !current?.predicate || !!current.predicate.metric;
   const kind = current?.type ?? type;
   return (
     <section className="glass data-panel" aria-label="Misiones del servidor">
@@ -381,43 +380,17 @@ export function Missions() {
                 defaultValue={current?.description ?? ""}
               />
             </label>
-            {!simple && (
-              <Notice>
-                Condición actual: {describePredicate(current?.predicate)}. Es
-                compuesta y se conserva sin cambios.
-              </Notice>
-            )}
-            {simple && (
-              <label>
-                Actividad
-                <select
-                  name="metric"
-                  defaultValue={
-                    (current?.predicate?.metric ??
-                      "observations") as AchievementMetric
-                  }
-                >
-                  {Object.entries(achievementMetrics).map(([v, text]) => (
-                    <option key={v} value={v}>
-                      {text}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            {simple && (
-              <label>
-                Cantidad necesaria
-                <input
-                  name="target"
-                  type="number"
-                  required
-                  min={1}
-                  max={100000}
-                  defaultValue={current?.predicate?.value ?? 1}
-                />
-              </label>
-            )}
+            <div className="form-span pb-field">
+              <span className="pb-label">
+                Condición para completar la misión
+              </span>
+              <PredicateBuilder
+                key={current?.id ?? "new"}
+                initial={current?.predicate as Predicate | null | undefined}
+                forMission
+                onChange={setCondition}
+              />
+            </div>
             {kind === "EVENT" && (
               <>
                 <label>

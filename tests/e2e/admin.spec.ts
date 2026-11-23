@@ -216,7 +216,11 @@ test("zonas muestran el mapa general y las misiones se crean en el servidor", as
   await dialog.getByLabel("Identificador único").fill("semana-verde");
   await dialog.getByLabel("Tipo de misión").selectOption("EVENT");
   await dialog.getByLabel("Nombre", { exact: true }).fill("Semana verde");
-  await dialog.getByLabel("Cantidad necesaria").fill("3");
+  await dialog.getByLabel("Cantidad", { exact: true }).fill("3");
+  // Las zonas visitadas no se miden por periodo: no se ofrecen en misiones.
+  await expect(
+    dialog.getByRole("option", { name: /Zonas del campus visitadas/ }),
+  ).toBeDisabled();
   await dialog.getByLabel("Inicio del evento").fill("2030-01-01T08:00");
   await dialog.getByLabel("Fin del evento").fill("2030-01-08T08:00");
   await dialog.getByRole("button", { name: "Crear misión" }).click();
@@ -227,8 +231,7 @@ test("zonas muestran el mapa general y las misiones se crean en el servidor", as
   expect(payload).toMatchObject({
     slug: "semana-verde",
     type: "EVENT",
-    metric: "observations",
-    target: 3,
+    predicate: { metric: "observations", op: "gte", value: 3 },
     xpReward: 10,
   });
   expect(typeof (payload as unknown as { startTime: string }).startTime).toBe(
@@ -608,14 +611,85 @@ test("logros publicados, creación y estado de despliegue", async ({ page }) => 
   await page
     .getByLabel("Descripción", { exact: true })
     .fill("Registra tu primera observación");
+  // Constructor de bloques: observaciones O publicaciones, y un bloque NO.
+  const builder = page.locator(".predicate-builder");
+  await builder.getByRole("button", { name: "Regla", exact: true }).click();
+  await builder.getByLabel("Actividad").nth(1).selectOption("posts");
+  await builder.getByLabel("Cantidad").nth(1).fill("2");
+  await builder.getByRole("button", { name: "Se cumple alguna (O)" }).click();
+  await builder.getByRole("button", { name: "Bloque", exact: true }).click();
+  const inner = builder.locator(".pb-group .pb-group");
+  await inner
+    .locator(".pb-group-head")
+    .getByRole("button", { name: "NO", exact: true })
+    .click();
+  await inner.getByLabel("Actividad").nth(1).selectOption("comments");
+  await expect(builder.locator(".pb-summary")).toContainText(
+    "al menos 1 observaciones o al menos 2 publicaciones o no (al menos 1 observaciones y al menos 1 comentarios)",
+  );
+  // Probar la condición con una cuenta real antes de guardar.
+  let previewBody: Record<string, unknown> | null = null;
+  await page.route("**/admin-api/resources/users?**", (route) =>
+    route.fulfill({
+      json: {
+        content: [
+          {
+            id: "943e5eda-be65-40bc-b896-a4daad3f3d85",
+            username: "laura",
+            firstName: "Laura",
+            lastName: "Gómez",
+          },
+        ],
+        pagination: {
+          page: 0,
+          size: 5,
+          totalElements: 1,
+          totalPages: 1,
+          first: true,
+          last: true,
+        },
+      },
+    }),
+  );
+  await page.route("**/admin-api/achievements/preview", (route) => {
+    previewBody = route.request().postDataJSON();
+    return route.fulfill({
+      json: { satisfied: true, metricValues: { observations: 4, posts: 1 } },
+    });
+  });
+  await builder.getByText("Probar con una cuenta").click();
+  await builder.getByPlaceholder("Buscar usuario o correo").fill("lau");
+  await builder.getByRole("button", { name: /@laura/ }).click();
+  await expect(builder.locator(".pb-result")).toContainText(
+    "@laura cumple la condición",
+  );
+  expect(previewBody).toMatchObject({
+    userId: "943e5eda-be65-40bc-b896-a4daad3f3d85",
+  });
+  await page.screenshot({
+    path: "test-results/logros-bloques.png",
+    fullPage: true,
+  });
   await page.getByRole("button", { name: "Guardar en el servidor" }).click();
   await expect(
     page.getByRole("heading", { name: "Mi primera planta", exact: true }),
   ).toBeVisible();
   expect(payload).toMatchObject({
-    metric: "observations",
-    target: 1,
     xpReward: 10,
+    predicate: {
+      or: [
+        { metric: "observations", op: "gte", value: 1 },
+        { metric: "posts", op: "gte", value: 2 },
+        {
+          not: {
+            and: [
+              { metric: "observations", op: "gte", value: 1 },
+              { metric: "comments", op: "gte", value: 1 },
+            ],
+          },
+        },
+      ],
+    },
   });
   await page
     .getByRole("region", { name: "Logros del servidor" })

@@ -1,12 +1,12 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Pencil, RefreshCw, Trash2, Trophy, Plus } from "lucide-react";
 import {
-  achievementMetrics,
   describePredicate,
   xpOptions,
   type Achievement,
-  type AchievementMetric,
 } from "../../../shared/achievements";
+import type { Predicate } from "../../../shared/predicate";
+import { PredicateBuilder } from "./PredicateBuilder";
 import { api, ApiError, errorMessage } from "../../lib/api";
 import {
   Badge,
@@ -29,6 +29,10 @@ export function Achievements() {
   const [active, setActive] = useState(true);
   const [busy, setBusy] = useState(false),
     [formError, setFormError] = useState("");
+  const [condition, setCondition] = useState<{
+    predicate?: Predicate;
+    error?: string;
+  }>({});
   const [removing, setRemoving] = useState<Achievement | null>(null);
   useEffect(() => {
     const controller = new AbortController();
@@ -60,17 +64,16 @@ export function Achievements() {
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy || edit === null) return;
+    if (!condition.predicate) {
+      setFormError(condition.error ?? "Define la condición antes de guardar.");
+      return;
+    }
     const data = new FormData(event.currentTarget);
     const common = {
       name: String(data.get("name")),
       description: String(data.get("description")),
       xpReward: Number(data.get("xpReward")),
-      ...(data.has("metric")
-        ? {
-            metric: String(data.get("metric")),
-            target: Number(data.get("target")),
-          }
-        : {}),
+      predicate: condition.predicate,
     };
     setBusy(true);
     setFormError("");
@@ -92,10 +95,6 @@ export function Achievements() {
     }
   }
   const current = edit && edit !== "new" ? edit : null;
-  // Una condición compuesta (y/o) creada en el servidor no se edita aquí.
-  const simple = !current?.predicate || !!current.predicate.metric;
-  const currentMetric = (current?.predicate?.metric ??
-    "observations") as AchievementMetric;
   const currentXp = (xpOptions as readonly number[]).includes(
     current?.xpReward ?? 0,
   )
@@ -235,37 +234,14 @@ export function Achievements() {
                 ))}
               </select>
             </label>
-            {!simple && (
-              <Notice>
-                Condición actual: {describePredicate(current?.predicate)}. Es
-                compuesta y se conserva sin cambios.
-              </Notice>
-            )}
-            {simple && (
-              <label>
-                Actividad
-                <select name="metric" defaultValue={currentMetric}>
-                  {Object.entries(achievementMetrics).map(([v, text]) => (
-                    <option key={v} value={v}>
-                      {text}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            {simple && (
-              <label>
-                Cantidad necesaria
-                <input
-                  name="target"
-                  type="number"
-                  required
-                  min={1}
-                  max={100000}
-                  defaultValue={current?.predicate?.value ?? 1}
-                />
-              </label>
-            )}
+            <div className="form-span pb-field">
+              <span className="pb-label">Condición para obtener el logro</span>
+              <PredicateBuilder
+                key={current?.id ?? "new"}
+                initial={current?.predicate as Predicate | null | undefined}
+                onChange={setCondition}
+              />
+            </div>
             {edit !== "new" && (
               <Toggle
                 label="Activo"
